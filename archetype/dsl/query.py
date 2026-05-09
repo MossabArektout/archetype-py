@@ -10,6 +10,7 @@ from archetype.analysis.imports import build_import_graph
 from archetype.analysis.models import Violation
 
 _current_graph: nx.DiGraph | None = None
+_current_root: Path | None = None
 
 
 def _matches_pattern(module_name: str, pattern: str) -> bool:
@@ -18,8 +19,10 @@ def _matches_pattern(module_name: str, pattern: str) -> bool:
 
 def load_project(project_root: Path) -> None:
     """Load a project's import graph into DSL runtime state."""
-    global _current_graph
-    _current_graph = build_import_graph(project_root)
+    global _current_graph, _current_root
+    resolved_root = project_root.resolve()
+    _current_graph = build_import_graph(resolved_root)
+    _current_root = resolved_root
 
 
 class ImportQuery:

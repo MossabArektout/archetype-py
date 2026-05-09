@@ -7,3 +7,7 @@ enhancement for strict layering validation.
 from simple_project import db
 from simple_project import services
 from simple_project.internal import tokens
+
+
+def handle() -> None:
+    """API handler used by naming rule tests."""
