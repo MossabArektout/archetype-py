@@ -5,14 +5,29 @@ build-backend = "hatchling.build"
 [project]
 name = "archetype"
 version = "0.1.0"
-description = "Static analysis tool for enforcing Python architecture rules as code."
-readme = "README.md"
+description = "Archetype statically analyzes Python projects to enforce architectural rules as code."
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { text = "MIT" }
+authors = [
+  { name = "Mossab Arektout", email = "mossabarektout2000@gmail.com" },
+]
 requires-python = ">=3.11"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
   "networkx",
   "click",
   "rich",
 ]
+
+[project.urls]
+Homepage = "https://github.com/your-org/your-repo"
+Documentation = "https://github.com/your-org/your-repo"
 
 [project.optional-dependencies]
 dev = [
