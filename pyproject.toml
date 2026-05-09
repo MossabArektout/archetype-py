@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.scripts]
-archetype = "archetype.check:main"
+archetype = "archetype.check:cli"
 
 [project.entry-points.pytest11]
 archetype = "archetype.plugin.pytest_plugin"
