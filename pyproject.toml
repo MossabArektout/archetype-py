@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "archetype"
+version = "0.1.0"
+description = "Static analysis tool for enforcing Python architecture rules as code."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "networkx",
+  "click",
+  "rich",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "hatch",
+]
+
+[project.scripts]
+archetype = "archetype.check:main"
+
+[project.entry-points.pytest11]
+archetype = "archetype.plugin.pytest_plugin"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
