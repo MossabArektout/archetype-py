@@ -8,9 +8,9 @@ import uuid
 from pathlib import Path
 
 import click
-from rich.console import Console
 
 from archetype.dsl.query import load_project
+from archetype.reporter import print_results
 from archetype.rule import registry
 
 
@@ -30,7 +30,6 @@ def check(path: Path) -> None:
     """Run architecture rules against a Python project."""
     project_path = path.resolve()
     architecture_file = project_path / "architecture.py"
-    console = Console()
 
     if not architecture_file.is_file():
         click.echo(
@@ -67,18 +66,5 @@ def check(path: Path) -> None:
 
     results = registry.run_all()
     passed = sum(1 for result in results if result.passed)
-    failed = len(results) - passed
-
-    for result in results:
-        if result.passed:
-            console.print(f"[green]✓[/green] {result.name}")
-            continue
-
-        console.print(f"[red]✗[/red] {result.name}")
-        for violation in result.violations:
-            console.print(f"  - {violation.message}")
-        if result.error is not None:
-            console.print(f"  - Rule error: {result.error}")
-
-    console.print(f"Summary: {passed} passed, {failed} failed, {len(results)} total")
-    raise SystemExit(0 if failed == 0 else 1)
+    print_results(results)
+    raise SystemExit(0 if passed == len(results) else 1)

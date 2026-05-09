@@ -51,7 +51,7 @@ def test_cli_exits_zero_when_all_rules_pass(tmp_path: Path) -> None:
     result = runner.invoke(cli, ["check", str(project_path)])
 
     assert result.exit_code == 0
-    assert "Summary: 1 passed, 0 failed, 1 total" in result.output
+    assert "Summary: 1 passed, 0 failed, 1 total rules." in result.output
 
 
 def test_cli_exits_one_when_any_rule_fails(tmp_path: Path) -> None:
@@ -74,7 +74,7 @@ def test_cli_exits_one_when_any_rule_fails(tmp_path: Path) -> None:
     result = runner.invoke(cli, ["check", str(project_path)])
 
     assert result.exit_code == 1
-    assert "Summary: 0 passed, 1 failed, 1 total" in result.output
+    assert "Summary: 0 passed, 1 failed, 1 total rules." in result.output
 
 
 def test_cli_prints_violation_messages_for_failing_rules(tmp_path: Path) -> None:
@@ -97,4 +97,36 @@ def test_cli_prints_violation_messages_for_failing_rules(tmp_path: Path) -> None
     result = runner.invoke(cli, ["check", str(project_path)])
 
     assert result.exit_code == 1
-    assert "must not import" in result.output
+    assert "✗ api-must-not-import-db" in result.output
+    assert "simple_project.api -> simple_project.db" in result.output
+    normalized_output = " ".join(result.output.split())
+    assert "must not import" in normalized_output
+
+
+def test_cli_summary_reflects_passing_and_failing_counts(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('pass-rule')",
+                "def _pass_rule() -> None:",
+                "    imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+                "@rule('fail-rule')",
+                "def _fail_rule() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 1
+    assert "✓ pass-rule" in result.output
+    assert "✗ fail-rule" in result.output
+    assert "Summary: 1 passed, 1 failed, 2 total rules." in result.output
