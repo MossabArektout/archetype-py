@@ -167,6 +167,12 @@ jobs:
 
 If your CI already runs `pytest`, no additional CI configuration is required.
 
-## Contributing
-Source code and issue tracking are in the GitHub repository: `https://github.com/MossabArektout/archetype-py`.
-Contributions are welcome; open an issue first to discuss scope before submitting a pull request.
+## Community
+If Archetype is useful to you or your team, the best way to support the project is to [star the repository on GitHub](https://github.com/MossabArektout/archetype-py/stargazers).
+
+- Star the repository on GitHub: [github.com/MossabArektout/archetype-py](https://github.com/MossabArektout/archetype-py)
+- Open an issue to report a bug or suggest a feature: [github.com/MossabArektout/archetype-py/issues/new](https://github.com/MossabArektout/archetype-py/issues/new)
+- Share the project with teammates or on social media if it solved a real problem for you.
+- Contribute code or documentation: [CONTRIBUTING.md](./CONTRIBUTING.md)
+
+The project is new, and every star, issue, and share genuinely helps it reach more developers who have the same problem.
