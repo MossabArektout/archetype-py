@@ -27,14 +27,14 @@ Summary: 1 passed, 1 failed, 2 total rules.
 
 ## Installation
 ```bash
-pip install archetype
+pip install archetype-py
 ```
 
 ## Quickstart
 1. Install Archetype.
 
 ```bash
-pip install archetype
+pip install archetype-py
 ```
 
 2. Create `architecture.py` in your project root.
@@ -161,7 +161,7 @@ jobs:
           python-version: "3.11"
       - run: |
           python -m pip install --upgrade pip
-          pip install archetype
+          pip install archetype-py
       - run: archetype check .
 ```
 

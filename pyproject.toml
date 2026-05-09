@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "archetype"
+name = "archetype-py"
 version = "0.1.0"
 description = "Archetype statically analyzes Python projects to enforce architectural rules as code."
 readme = { file = "README.md", content-type = "text/markdown" }
