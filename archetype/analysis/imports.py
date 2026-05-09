@@ -44,6 +44,11 @@ def build_import_graph(project_root: Path) -> nx.DiGraph:
         top_level = module_name.split(".", maxsplit=1)[0]
         return (root / top_level).is_dir()
 
+    def add_import_edge(current_module: str, imported_module: str) -> None:
+        if imported_module and is_local_module(imported_module):
+            graph.add_node(imported_module)
+            graph.add_edge(current_module, imported_module)
+
     for file_path in sorted(root.rglob("*.py")):
         current_module = path_to_module(file_path, root)
         if not current_module:
@@ -57,26 +62,36 @@ def build_import_graph(project_root: Path) -> nx.DiGraph:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    imported_module = alias.name
-                    if is_local_module(imported_module):
-                        graph.add_node(imported_module)
-                        graph.add_edge(current_module, imported_module)
+                    add_import_edge(current_module, alias.name)
 
             if isinstance(node, ast.ImportFrom):
                 if node.level and node.level > 0:
                     resolution_context = current_module
                     if file_path.stem in {"__init__", "init"}:
                         resolution_context = f"{current_module}.__init__"
-                    imported_module = resolve_relative_import(
+                    base_module = resolve_relative_import(
                         resolution_context,
                         node.module,
                         node.level,
                     )
                 else:
-                    imported_module = node.module or ""
+                    base_module = node.module or ""
 
-                if imported_module and is_local_module(imported_module):
-                    graph.add_node(imported_module)
-                    graph.add_edge(current_module, imported_module)
+                # Resolve imported names as potential submodules first.
+                # Example: `from simple_project import db` -> `simple_project.db`
+                # Example: `from . import utils` -> `<current_pkg>.utils`
+                resolved_submodule = False
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    candidate = f"{base_module}.{alias.name}" if base_module else alias.name
+                    if candidate and is_local_module(candidate):
+                        resolved_submodule = True
+                        add_import_edge(current_module, candidate)
+
+                # Fall back to base module dependency when no concrete local
+                # submodule candidates were found (or for star imports).
+                if not resolved_submodule or any(alias.name == "*" for alias in node.names):
+                    add_import_edge(current_module, base_module)
 
     return graph
