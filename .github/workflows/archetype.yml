@@ -1,0 +1,36 @@
+name: Archetype Check Template
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  archetype:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Pull down your repository code so CI can inspect it.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Install Python 3.11 so the Archetype CLI can run.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Install Archetype from PyPI into the CI environment.
+      - name: Install Archetype
+        run: |
+          python -m pip install --upgrade pip
+          pip install archetype
+
+      # Run architecture rules defined in architecture.py.
+      # This step exits non-zero on violations, which fails the workflow.
+      - name: Run architecture checks
+        run: archetype check .
+
+      # If your team already runs pytest in CI, you can skip this workflow file.
+      # Archetype's pytest plugin runs architecture.py rules automatically during pytest.
