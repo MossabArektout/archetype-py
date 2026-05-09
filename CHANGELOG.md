@@ -13,3 +13,11 @@
 - Added test fixtures and comprehensive pytest coverage for graph construction, DSL behavior, CLI behavior, plugin collection, and built-in rules.
 - Added GitHub Actions workflows for reusable architecture checks in downstream projects and matrix CI for Archetype development.
 - Added packaging and release automation for PyPI publication using GitHub Actions Trusted Publishing.
+
+
+## 0.1.1 — 2026-05-09
+
+### Fixed
+- Updated contributing link to correct GitHub repository URL
+- Fixed badge URLs to point to correct repository
+- Updated project links in pyproject.toml
