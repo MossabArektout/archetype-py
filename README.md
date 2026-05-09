@@ -168,5 +168,5 @@ jobs:
 If your CI already runs `pytest`, no additional CI configuration is required.
 
 ## Contributing
-Source code and issue tracking are in the GitHub repository: `https://github.com/your-org/your-repo`.
+Source code and issue tracking are in the GitHub repository: `https://github.com/MossabArektout/archetype-py`.
 Contributions are welcome; open an issue first to discuss scope before submitting a pull request.

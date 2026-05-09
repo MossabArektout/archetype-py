@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "archetype-py"
 version = "0.1.0"
-description = "Archetype statically analyzes Python projects to enforce architectural rules as code."
+description = "Enforce architectural rules as code. Catch structural violations before they merge."
 readme = { file = "README.md", content-type = "text/markdown" }
 license = { text = "MIT" }
 authors = [
@@ -26,8 +26,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/your-repo"
-Documentation = "https://github.com/your-org/your-repo"
+Homepage = "https://github.com/MossabArektout/archetype-py"
+Documentation = "https://github.com/MossabArektout/archetype-py"
 
 [project.optional-dependencies]
 dev = [
