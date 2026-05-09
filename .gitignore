@@ -36,3 +36,4 @@ htmlcov/
 # Hatch
 .hatch/
 LAUNCH.md
+ROADMAP.md

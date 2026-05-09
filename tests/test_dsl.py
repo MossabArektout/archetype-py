@@ -6,6 +6,7 @@ import pytest
 
 import archetype.dsl.query as query_module
 from archetype.dsl.query import imports, load_project
+from archetype.rules import no_cycles
 
 
 def _fixture_root() -> Path:
@@ -56,5 +57,12 @@ def test_must_only_import_from_raises_and_passes_for_valid_edges() -> None:
 
 
 def test_imports_without_load_project_raises_runtime_error() -> None:
-    with pytest.raises(RuntimeError, match="Call load_project\\(path\\)"):
+    with pytest.raises(RuntimeError) as excinfo:
         imports("simple_project.api")
+    assert "archetype check" in str(excinfo.value)
+
+
+def test_builtin_rule_without_load_project_raises_runtime_error_with_helpful_message() -> None:
+    with pytest.raises(RuntimeError) as excinfo:
+        no_cycles()
+    assert "archetype check" in str(excinfo.value)
