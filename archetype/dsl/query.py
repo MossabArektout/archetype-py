@@ -32,7 +32,19 @@ class ImportQuery:
         self.pattern = pattern
         if _current_graph is None:
             raise RuntimeError(
-                "No project graph is loaded. Call load_project(path) before using imports()."
+                "Archetype has not loaded a project yet.\n\n"
+                "This usually means you are calling imports() or module() outside "
+                "of a rule function,\n"
+                "or running architecture.py directly instead of through "
+                "archetype check or pytest.\n\n"
+                "To fix this:\n"
+                "  - Run your rules with: archetype check .\n"
+                "  - Or run your test suite with: pytest\n"
+                "  - Do not call import archetype; archetype.check() manually\n\n"
+                "If you need to load a project programmatically:\n"
+                "  from archetype import load_project\n"
+                "  from pathlib import Path\n"
+                "  load_project(Path(\".\"))"
             )
         self.graph = _current_graph
         self.matched_nodes = [

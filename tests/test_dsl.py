@@ -56,5 +56,5 @@ def test_must_only_import_from_raises_and_passes_for_valid_edges() -> None:
 
 
 def test_imports_without_load_project_raises_runtime_error() -> None:
-    with pytest.raises(RuntimeError, match="Call load_project\\(path\\)"):
+    with pytest.raises(RuntimeError, match="Archetype has not loaded a project yet"):
         imports("simple_project.api")
