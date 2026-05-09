@@ -49,7 +49,10 @@ def test_must_only_import_from_raises_and_passes_for_valid_edges() -> None:
     with pytest.raises(AssertionError):
         imports("simple_project.api").must_only_import_from("simple_project.services")
 
-    imports("simple_project.services").must_only_import_from("simple_project.db")
+    imports("simple_project.services").must_only_import_from(
+        "simple_project.db",
+        "simple_project.internal",
+    )
 
 
 def test_imports_without_load_project_raises_runtime_error() -> None:
