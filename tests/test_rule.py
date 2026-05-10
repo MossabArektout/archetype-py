@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from archetype.analysis.models import Violation
-from archetype.rule import registry, rule
+from archetype.rule import registry, rule, warn
 
 
 @pytest.fixture(autouse=True)
@@ -87,3 +87,83 @@ def test_clear_removes_all_registered_rules() -> None:
     assert len(registry._rules) == 2
     registry.clear()
     assert registry._rules == []
+
+
+def test_warned_rule_returns_warned_result_on_assertion() -> None:
+    violations = [
+        Violation(
+            module="simple_project.api",
+            file=Path("simple_project/api.py"),
+            line=1,
+            message="API must not import DB directly.",
+        )
+    ]
+
+    @rule("warned-failing-rule")
+    @warn
+    def warned_failing_rule() -> None:
+        exc = AssertionError("rule failed")
+        setattr(exc, "violations", violations)
+        raise exc
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].name == "warned-failing-rule"
+    assert results[0].passed is False
+    assert results[0].warned is True
+    assert results[0].is_warning is True
+    assert results[0].violations == violations
+    assert results[0].error is None
+
+
+def test_warned_rule_that_passes_is_marked_as_warning_rule() -> None:
+    @rule("warned-passing-rule")
+    @warn
+    def warned_passing_rule() -> None:
+        return None
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].name == "warned-passing-rule"
+    assert results[0].passed is True
+    assert results[0].warned is False
+    assert results[0].is_warning is True
+
+
+def test_registry_run_all_includes_warned_and_normal_results() -> None:
+    @rule("normal-pass")
+    def normal_pass() -> None:
+        return None
+
+    @rule("warned-fail")
+    @warn
+    def warned_fail() -> None:
+        exc = AssertionError("warn-only failure")
+        setattr(exc, "violations", [])
+        raise exc
+
+    results = registry.run_all()
+
+    assert len(results) == 2
+    by_name = {result.name: result for result in results}
+    assert by_name["normal-pass"].passed is True
+    assert by_name["normal-pass"].warned is False
+    assert by_name["warned-fail"].passed is False
+    assert by_name["warned-fail"].warned is True
+    assert by_name["warned-fail"].is_warning is True
+
+
+def test_warned_rules_do_not_count_as_hard_failures_for_ci() -> None:
+    @rule("warned-fail")
+    @warn
+    def warned_fail() -> None:
+        exc = AssertionError("warn-only failure")
+        setattr(exc, "violations", [])
+        raise exc
+
+    results = registry.run_all()
+    hard_failures = sum(1 for result in results if not result.passed and not result.warned)
+
+    assert hard_failures == 0

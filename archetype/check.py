@@ -65,6 +65,6 @@ def check(path: Path) -> None:
         sys.path = original_sys_path
 
     results = registry.run_all()
-    passed = sum(1 for result in results if result.passed)
+    failed = sum(1 for result in results if not result.passed and not result.warned)
     print_results(results)
-    raise SystemExit(0 if passed == len(results) else 1)
+    raise SystemExit(0 if failed == 0 else 1)
