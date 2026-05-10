@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from archetype.analysis.models import RuleResult
 from archetype.dsl.query import load_project
 from archetype.reporter import format_violation
 from archetype.rule import registry
@@ -59,7 +60,17 @@ class ArchetypeItem(pytest.Item):
         self.file_path = file_path
 
     def runtest(self) -> None:
-        self.rule_func()
+        outcome = self.rule_func()
+        if not isinstance(outcome, RuleResult):
+            return
+
+        if outcome.warned and outcome.violations:
+            details = "; ".join(
+                format_violation(violation) for violation in outcome.violations
+            )
+            reason = f"Warning-only rule violation: {details}"
+            self.add_marker(pytest.mark.xfail(reason=reason, strict=False))
+            pytest.xfail(reason)
 
     def repr_failure(self, excinfo, style=None):  # type: ignore[override]
         err = excinfo.value

@@ -26,19 +26,28 @@ def format_results(results: list[RuleResult]) -> str:
     """Build a complete plain-text report for rule execution results."""
     lines: list[str] = []
     passed = sum(1 for result in results if result.passed)
-    failed = len(results) - passed
+    warned = sum(1 for result in results if result.warned)
+    failed = len(results) - passed - warned
 
     for result in results:
-        symbol = "✓" if result.passed else "✗"
+        if result.is_warning:
+            symbol = "⚠"
+        else:
+            symbol = "✓" if result.passed else "✗"
         lines.append(f"{symbol} {result.name}")
-        if not result.passed:
+        if result.warned:
+            for violation in result.violations:
+                lines.append(f"  - {format_violation(violation)}")
+            if result.error is not None:
+                lines.append(f"  - Rule error: {result.error}")
+        elif not result.passed:
             for violation in result.violations:
                 lines.append(f"  - {format_violation(violation)}")
             if result.error is not None:
                 lines.append(f"  - Rule error: {result.error}")
 
     lines.append(
-        f"Summary: {passed} passed, {failed} failed, {len(results)} total rules."
+        f"Summary: {passed} passed, {failed} failed, {warned} warned, {len(results)} total rules."
     )
     return "\n".join(lines)
 
@@ -47,9 +56,19 @@ def print_results(results: list[RuleResult]) -> None:
     """Print rule results using rich colors for pass/fail states."""
     console = Console()
     passed = sum(1 for result in results if result.passed)
-    failed = len(results) - passed
+    warned = sum(1 for result in results if result.warned)
+    failed = len(results) - passed - warned
 
     for result in results:
+        if result.is_warning:
+            console.print(f"[yellow]⚠ {result.name}[/yellow]")
+            if result.warned:
+                for violation in result.violations:
+                    console.print(f"[yellow]  - {format_violation(violation)}[/yellow]")
+                if result.error is not None:
+                    console.print(f"[yellow]  - Rule error: {result.error}[/yellow]")
+            continue
+
         if result.passed:
             console.print(f"[green]✓ {result.name}[/green]")
             continue
@@ -60,6 +79,13 @@ def print_results(results: list[RuleResult]) -> None:
         if result.error is not None:
             console.print(f"[red]  - Rule error: {result.error}[/red]")
 
-    summary = f"Summary: {passed} passed, {failed} failed, {len(results)} total rules."
-    summary_color = "green" if failed == 0 else "red"
+    summary = (
+        f"Summary: {passed} passed, {failed} failed, {warned} warned, {len(results)} total rules."
+    )
+    if failed > 0:
+        summary_color = "red"
+    elif warned > 0:
+        summary_color = "yellow"
+    else:
+        summary_color = "green"
     console.print(f"[{summary_color}]{summary}[/{summary_color}]")

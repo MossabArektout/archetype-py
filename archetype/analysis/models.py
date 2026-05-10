@@ -24,3 +24,5 @@ class RuleResult:
     passed: bool
     violations: list[Violation] = field(default_factory=list)
     error: Exception | None = None
+    warned: bool = False
+    is_warning: bool = False

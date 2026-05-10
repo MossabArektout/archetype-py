@@ -8,7 +8,7 @@ from typing import Callable
 from archetype.analysis.models import RuleResult
 
 
-RuleFn = Callable[[], None]
+RuleFn = Callable[[], None | RuleResult]
 
 
 class RuleRegistry:
@@ -31,8 +31,11 @@ class RuleRegistry:
         for func in self._rules:
             rule_name = getattr(func, "_rule_name", func.__name__)
             try:
-                func()
-                results.append(RuleResult(name=rule_name, passed=True))
+                outcome = func()
+                if isinstance(outcome, RuleResult):
+                    results.append(outcome)
+                else:
+                    results.append(RuleResult(name=rule_name, passed=True))
             except AssertionError as exc:
                 violations = getattr(exc, "violations", [])
                 results.append(
@@ -50,8 +53,10 @@ def rule(name: str) -> Callable[[RuleFn], RuleFn]:
     """Decorator for registering architecture rules with a display name."""
 
     def decorator(func: RuleFn) -> RuleFn:
+        setattr(func, "_rule_name", name)
+
         @wraps(func)
-        def wrapped() -> None:
+        def wrapped() -> None | RuleResult:
             return func()
 
         setattr(wrapped, "_rule_name", name)
@@ -59,3 +64,29 @@ def rule(name: str) -> Callable[[RuleFn], RuleFn]:
         return wrapped
 
     return decorator
+
+
+def warn(func: RuleFn) -> RuleFn:
+    """Decorator that turns assertion violations into non-blocking warnings."""
+
+    @wraps(func)
+    def wrapped() -> None | RuleResult:
+        rule_name = getattr(
+            wrapped,
+            "_rule_name",
+            getattr(func, "_rule_name", func.__name__),
+        )
+        try:
+            func()
+            return RuleResult(name=rule_name, passed=True, is_warning=True)
+        except AssertionError as exc:
+            violations = getattr(exc, "violations", [])
+            return RuleResult(
+                name=rule_name,
+                passed=False,
+                violations=violations,
+                warned=True,
+                is_warning=True,
+            )
+
+    return wrapped
