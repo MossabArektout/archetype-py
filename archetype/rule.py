@@ -30,6 +30,16 @@ class RuleRegistry:
         results: list[RuleResult] = []
         for func in self._rules:
             rule_name = getattr(func, "_rule_name", func.__name__)
+            if getattr(func, "_skipped", False):
+                results.append(
+                    RuleResult(
+                        name=rule_name,
+                        passed=True,
+                        skipped=True,
+                        skip_reason=getattr(func, "_skip_reason", None),
+                    )
+                )
+                continue
             try:
                 outcome = func()
                 if isinstance(outcome, RuleResult):
@@ -60,6 +70,9 @@ def rule(name: str) -> Callable[[RuleFn], RuleFn]:
             return func()
 
         setattr(wrapped, "_rule_name", name)
+        if getattr(func, "_skipped", False):
+            setattr(wrapped, "_skipped", True)
+            setattr(wrapped, "_skip_reason", getattr(func, "_skip_reason", None))
         registry.register(wrapped)
         return wrapped
 
@@ -90,3 +103,39 @@ def warn(func: RuleFn) -> RuleFn:
             )
 
     return wrapped
+
+
+def skip(
+    func: RuleFn | str | None = None,
+    *,
+    reason: str | None = None,
+) -> RuleFn | Callable[[RuleFn], RuleFn]:
+    """Decorator that marks a rule as temporarily skipped."""
+
+    skip_reason = reason
+    if isinstance(func, str) and reason is None:
+        skip_reason = func
+
+    def decorator(rule_func: RuleFn) -> RuleFn:
+        @wraps(rule_func)
+        def wrapped() -> RuleResult:
+            rule_name = getattr(
+                wrapped,
+                "_rule_name",
+                getattr(rule_func, "_rule_name", rule_func.__name__),
+            )
+            return RuleResult(
+                name=rule_name,
+                passed=True,
+                skipped=True,
+                skip_reason=skip_reason,
+                violations=[],
+            )
+
+        setattr(wrapped, "_skipped", True)
+        setattr(wrapped, "_skip_reason", skip_reason)
+        return wrapped
+
+    if callable(func):
+        return decorator(func)
+    return decorator

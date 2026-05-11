@@ -60,9 +60,16 @@ class ArchetypeItem(pytest.Item):
         self.file_path = file_path
 
     def runtest(self) -> None:
+        if getattr(self.rule_func, "_skipped", False):
+            reason = getattr(self.rule_func, "_skip_reason", None) or "Rule temporarily skipped"
+            pytest.skip(reason)
+
         outcome = self.rule_func()
         if not isinstance(outcome, RuleResult):
             return
+
+        if outcome.skipped:
+            pytest.skip(outcome.skip_reason or "Rule temporarily skipped")
 
         if outcome.warned and outcome.violations:
             details = "; ".join(

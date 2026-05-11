@@ -25,11 +25,19 @@ def format_violation(violation: Violation) -> str:
 def format_results(results: list[RuleResult]) -> str:
     """Build a complete plain-text report for rule execution results."""
     lines: list[str] = []
-    passed = sum(1 for result in results if result.passed)
+    skipped = sum(1 for result in results if result.skipped)
     warned = sum(1 for result in results if result.warned)
-    failed = len(results) - passed - warned
+    passed = sum(1 for result in results if result.passed and not result.skipped)
+    failed = len(results) - passed - warned - skipped
 
     for result in results:
+        if result.skipped:
+            line = f"— {result.name}"
+            if result.skip_reason:
+                line += f" ({result.skip_reason})"
+            lines.append(line)
+            continue
+
         if result.is_warning:
             symbol = "⚠"
         else:
@@ -47,7 +55,7 @@ def format_results(results: list[RuleResult]) -> str:
                 lines.append(f"  - Rule error: {result.error}")
 
     lines.append(
-        f"Summary: {passed} passed, {failed} failed, {warned} warned, {len(results)} total rules."
+        f"Summary: {passed} passed, {failed} failed, {warned} warned, {skipped} skipped, {len(results)} total rules."
     )
     return "\n".join(lines)
 
@@ -55,11 +63,19 @@ def format_results(results: list[RuleResult]) -> str:
 def print_results(results: list[RuleResult]) -> None:
     """Print rule results using rich colors for pass/fail states."""
     console = Console()
-    passed = sum(1 for result in results if result.passed)
+    skipped = sum(1 for result in results if result.skipped)
     warned = sum(1 for result in results if result.warned)
-    failed = len(results) - passed - warned
+    passed = sum(1 for result in results if result.passed and not result.skipped)
+    failed = len(results) - passed - warned - skipped
 
     for result in results:
+        if result.skipped:
+            line = f"— {result.name}"
+            if result.skip_reason:
+                line += f" ({result.skip_reason})"
+            console.print(f"[dim]{line}[/dim]")
+            continue
+
         if result.is_warning:
             console.print(f"[yellow]⚠ {result.name}[/yellow]")
             if result.warned:
@@ -79,9 +95,7 @@ def print_results(results: list[RuleResult]) -> None:
         if result.error is not None:
             console.print(f"[red]  - Rule error: {result.error}[/red]")
 
-    summary = (
-        f"Summary: {passed} passed, {failed} failed, {warned} warned, {len(results)} total rules."
-    )
+    summary = f"Summary: {passed} passed, {failed} failed, {warned} warned, {skipped} skipped, {len(results)} total rules."
     if failed > 0:
         summary_color = "red"
     elif warned > 0:
