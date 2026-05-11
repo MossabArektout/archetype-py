@@ -22,6 +22,12 @@ def format_violation(violation: Violation) -> str:
     return f"{violation.module} -> {target}: {violation.message}"
 
 
+def _format_rule_name(result: RuleResult) -> str:
+    if result.since_date:
+        return f"{result.name} (since {result.since_date})"
+    return result.name
+
+
 def format_results(results: list[RuleResult]) -> str:
     """Build a complete plain-text report for rule execution results."""
     lines: list[str] = []
@@ -42,7 +48,7 @@ def format_results(results: list[RuleResult]) -> str:
             symbol = "⚠"
         else:
             symbol = "✓" if result.passed else "✗"
-        lines.append(f"{symbol} {result.name}")
+        lines.append(f"{symbol} {_format_rule_name(result)}")
         if result.warned:
             for violation in result.violations:
                 lines.append(f"  - {format_violation(violation)}")
@@ -77,7 +83,7 @@ def print_results(results: list[RuleResult]) -> None:
             continue
 
         if result.is_warning:
-            console.print(f"[yellow]⚠ {result.name}[/yellow]")
+            console.print(f"[yellow]⚠ {_format_rule_name(result)}[/yellow]")
             if result.warned:
                 for violation in result.violations:
                     console.print(f"[yellow]  - {format_violation(violation)}[/yellow]")
@@ -86,10 +92,10 @@ def print_results(results: list[RuleResult]) -> None:
             continue
 
         if result.passed:
-            console.print(f"[green]✓ {result.name}[/green]")
+            console.print(f"[green]✓ {_format_rule_name(result)}[/green]")
             continue
 
-        console.print(f"[red]✗ {result.name}[/red]")
+        console.print(f"[red]✗ {_format_rule_name(result)}[/red]")
         for violation in result.violations:
             console.print(f"[red]  - {format_violation(violation)}[/red]")
         if result.error is not None:
