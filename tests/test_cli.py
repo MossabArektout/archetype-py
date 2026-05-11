@@ -51,7 +51,7 @@ def test_cli_exits_zero_when_all_rules_pass(tmp_path: Path) -> None:
     result = runner.invoke(cli, ["check", str(project_path)])
 
     assert result.exit_code == 0
-    assert "Summary: 1 passed, 0 failed, 0 warned, 1 total rules." in result.output
+    assert "Summary: 1 passed, 0 failed, 0 warned, 0 skipped, 1 total rules." in result.output
 
 
 def test_cli_exits_one_when_any_rule_fails(tmp_path: Path) -> None:
@@ -74,7 +74,7 @@ def test_cli_exits_one_when_any_rule_fails(tmp_path: Path) -> None:
     result = runner.invoke(cli, ["check", str(project_path)])
 
     assert result.exit_code == 1
-    assert "Summary: 0 passed, 1 failed, 0 warned, 1 total rules." in result.output
+    assert "Summary: 0 passed, 1 failed, 0 warned, 0 skipped, 1 total rules." in result.output
 
 
 def test_cli_prints_violation_messages_for_failing_rules(tmp_path: Path) -> None:
@@ -129,7 +129,7 @@ def test_cli_summary_reflects_passing_and_failing_counts(tmp_path: Path) -> None
     assert result.exit_code == 1
     assert "✓ pass-rule" in result.output
     assert "✗ fail-rule" in result.output
-    assert "Summary: 1 passed, 1 failed, 0 warned, 2 total rules." in result.output
+    assert "Summary: 1 passed, 1 failed, 0 warned, 0 skipped, 2 total rules." in result.output
 
 
 def test_cli_exits_zero_when_only_warned_rules_have_violations(tmp_path: Path) -> None:
@@ -154,7 +154,7 @@ def test_cli_exits_zero_when_only_warned_rules_have_violations(tmp_path: Path) -
 
     assert result.exit_code == 0
     assert "⚠ warn-only-rule" in result.output
-    assert "Summary: 0 passed, 0 failed, 1 warned, 1 total rules." in result.output
+    assert "Summary: 0 passed, 0 failed, 1 warned, 0 skipped, 1 total rules." in result.output
 
 
 def test_cli_summary_includes_warned_count(tmp_path: Path) -> None:
@@ -182,4 +182,81 @@ def test_cli_summary_includes_warned_count(tmp_path: Path) -> None:
     result = runner.invoke(cli, ["check", str(project_path)])
 
     assert result.exit_code == 0
-    assert "Summary: 1 passed, 0 failed, 1 warned, 2 total rules." in result.output
+    assert "Summary: 1 passed, 0 failed, 1 warned, 0 skipped, 2 total rules." in result.output
+
+
+def test_cli_exits_zero_when_all_rules_are_skipped(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import rule, skip",
+                "",
+                "@rule('skipped-rule')",
+                "@skip",
+                "def _skipped_rule() -> None:",
+                "    raise AssertionError('must never execute')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    assert "— skipped-rule" in result.output
+    assert "Summary: 0 passed, 0 failed, 0 warned, 1 skipped, 1 total rules." in result.output
+
+
+def test_cli_summary_includes_skipped_count(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule, skip",
+                "",
+                "@rule('pass-rule')",
+                "def _pass_rule() -> None:",
+                "    imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+                "@rule('skipped-rule')",
+                "@skip",
+                "def _skipped_rule() -> None:",
+                "    raise AssertionError('must never execute')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    assert "Summary: 1 passed, 0 failed, 0 warned, 1 skipped, 2 total rules." in result.output
+
+
+def test_cli_outputs_skip_reason_when_provided(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import rule, skip",
+                "",
+                "@rule('skipped-rule')",
+                "@skip(reason='Fixing in refactor-auth branch')",
+                "def _skipped_rule() -> None:",
+                "    raise AssertionError('must never execute')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    assert "— skipped-rule (Fixing in refactor-auth branch)" in result.output

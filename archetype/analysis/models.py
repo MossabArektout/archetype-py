@@ -26,3 +26,5 @@ class RuleResult:
     error: Exception | None = None
     warned: bool = False
     is_warning: bool = False
+    skipped: bool = False
+    skip_reason: str | None = None

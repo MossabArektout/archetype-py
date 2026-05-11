@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from archetype.analysis.models import Violation
-from archetype.rule import registry, rule, warn
+from archetype.rule import registry, rule, skip, warn
 
 
 @pytest.fixture(autouse=True)
@@ -165,5 +165,96 @@ def test_warned_rules_do_not_count_as_hard_failures_for_ci() -> None:
 
     results = registry.run_all()
     hard_failures = sum(1 for result in results if not result.passed and not result.warned)
+
+    assert hard_failures == 0
+
+
+def test_skipped_rule_is_not_executed_in_run_all() -> None:
+    calls = {"count": 0}
+
+    @rule("skipped-rule")
+    @skip
+    def skipped_rule() -> None:
+        calls["count"] += 1
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert calls["count"] == 0
+
+
+def test_skipped_rule_result_marks_skipped_and_passed() -> None:
+    @rule("skipped-rule")
+    @skip
+    def skipped_rule() -> None:
+        raise AssertionError("must never execute")
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].name == "skipped-rule"
+    assert results[0].skipped is True
+    assert results[0].passed is True
+    assert results[0].violations == []
+
+
+def test_skip_reason_is_stored_in_rule_result() -> None:
+    reason = "Fixing in refactor-auth branch"
+
+    @rule("skipped-with-reason")
+    @skip(reason=reason)
+    def skipped_with_reason() -> None:
+        raise AssertionError("must never execute")
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].skipped is True
+    assert results[0].skip_reason == reason
+
+
+def test_skip_without_reason_sets_none_in_rule_result() -> None:
+    @rule("skipped-no-reason")
+    @skip
+    def skipped_no_reason() -> None:
+        raise AssertionError("must never execute")
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].skipped is True
+    assert results[0].skip_reason is None
+
+
+def test_skip_without_parentheses_matches_skip_call_without_args() -> None:
+    @rule("skip-no-parens")
+    @skip
+    def skip_no_parens() -> None:
+        raise AssertionError("must never execute")
+
+    @rule("skip-empty-parens")
+    @skip()
+    def skip_empty_parens() -> None:
+        raise AssertionError("must never execute")
+
+    results = registry.run_all()
+    by_name = {result.name: result for result in results}
+
+    assert by_name["skip-no-parens"].skipped is True
+    assert by_name["skip-no-parens"].skip_reason is None
+    assert by_name["skip-empty-parens"].skipped is True
+    assert by_name["skip-empty-parens"].skip_reason is None
+
+
+def test_skipped_rules_do_not_count_as_hard_failures_for_ci() -> None:
+    @rule("skipped-rule")
+    @skip
+    def skipped_rule() -> None:
+        raise AssertionError("must never execute")
+
+    results = registry.run_all()
+    hard_failures = sum(
+        1 for result in results if not result.passed and not result.warned
+    )
 
     assert hard_failures == 0
