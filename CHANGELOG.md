@@ -21,3 +21,25 @@
 - Updated contributing link to correct GitHub repository URL
 - Fixed badge URLs to point to correct repository
 - Updated project links in pyproject.toml
+
+## 0.2.0 — 2026-05-13
+
+### Added
+- @warn decorator for non-blocking rule violations that report
+  without failing CI
+- @skip decorator to temporarily disable a rule with an optional
+  reason string
+- @since decorator to enforce rules only on files modified after
+  a given date using git history
+- Glob pattern support for module matching with single star and
+  double star wildcards
+- Rule grouping with group context manager and --group CLI flag
+- archetype init command to scaffold architecture.py by detecting
+  project structure automatically
+- Performance benchmarking suite in benchmarks/ folder
+- Improved error messages when load_project has not been called
+
+### Changed
+- Summary line now includes warned and skipped counts
+- Reporter output organized by group when rules use group context manager
+- pytest plugin node IDs include group name when present
