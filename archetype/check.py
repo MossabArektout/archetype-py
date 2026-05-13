@@ -26,7 +26,14 @@ def cli() -> None:
     default=".",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
-def check(path: Path) -> None:
+@click.option(
+    "--group",
+    "group_filter",
+    type=str,
+    default=None,
+    help="Run only rules in the specified group name (exact match).",
+)
+def check(path: Path, group_filter: str | None) -> None:
     """Run architecture rules against a Python project."""
     project_path = path.resolve()
     architecture_file = project_path / "architecture.py"
@@ -64,7 +71,7 @@ def check(path: Path) -> None:
     finally:
         sys.path = original_sys_path
 
-    results = registry.run_all()
+    results = registry.run_all(group_filter=group_filter)
     failed = sum(1 for result in results if not result.passed and not result.warned)
     print_results(results)
     raise SystemExit(0 if failed == 0 else 1)

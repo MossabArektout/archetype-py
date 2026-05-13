@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from archetype.analysis.models import Violation
-from archetype.rule import registry, rule, skip, warn
+from archetype.rule import group, registry, rule, skip, warn
 
 
 @pytest.fixture(autouse=True)
@@ -258,3 +258,17 @@ def test_skipped_rules_do_not_count_as_hard_failures_for_ci() -> None:
     )
 
     assert hard_failures == 0
+
+
+def test_rule_result_includes_group_when_rule_registered_in_group() -> None:
+    with group("Layer boundaries"):
+
+        @rule("grouped-rule")
+        def grouped_rule() -> None:
+            return None
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].name == "grouped-rule"
+    assert results[0].group == "Layer boundaries"

@@ -98,3 +98,25 @@ def test_plugin_rule_failure_shows_violation_message(pytester) -> None:
             "*1 failed*",
         ]
     )
+
+
+def test_plugin_nodeid_includes_group_name_when_present(pytester) -> None:
+    _write_simple_project(pytester.path)
+    (pytester.path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import group, imports, rule",
+                "",
+                "with group('Layer boundaries'):",
+                "    @rule('api-not-db')",
+                "    def _rule_api_not_db() -> None:",
+                "        imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = pytester.runpytest_inprocess("--collect-only", "-q")
+
+    result.stdout.fnmatch_lines(["*architecture.py::Layer boundaries::api-not-db*"])

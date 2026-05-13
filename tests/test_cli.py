@@ -309,3 +309,65 @@ def test_cli_outputs_since_date_next_to_rule_name(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "✓ api-must-not-import-db (since 2000-01-01)" in result.output
+
+
+def test_cli_group_flag_passes_group_filter_to_registry_run_all(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import rule",
+                "",
+                "@rule('simple-rule')",
+                "def _simple_rule() -> None:",
+                "    return None",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, str | None] = {"group_filter": None}
+
+    def fake_run_all(*, group_filter: str | None = None):
+        captured["group_filter"] = group_filter
+        return []
+
+    monkeypatch.setattr("archetype.check.registry.run_all", fake_run_all)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli, ["check", str(project_path), "--group", "Layer boundaries"]
+    )
+
+    assert result.exit_code == 0
+    assert captured["group_filter"] == "Layer boundaries"
+
+
+def test_cli_group_flag_with_unknown_group_returns_zero_rules(
+    tmp_path: Path,
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import group, imports, rule",
+                "",
+                "with group('Layer boundaries'):",
+                "    @rule('api-not-db')",
+                "    def _rule_api_not_db() -> None:",
+                "        imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--group", "No such group"])
+
+    assert result.exit_code == 0
+    assert "Summary: 0 passed, 0 failed, 0 warned, 0 skipped, 0 total rules." in result.output

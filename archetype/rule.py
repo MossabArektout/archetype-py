@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from functools import wraps
 from pathlib import Path
 from typing import Callable
@@ -12,6 +13,32 @@ from archetype.dsl import query as query_module
 
 
 RuleFn = Callable[[], None | RuleResult]
+RuleEntry = tuple[RuleFn, str | None]
+_current_group = threading.local()
+
+
+def _get_current_group() -> str | None:
+    return getattr(_current_group, "name", None)
+
+
+class _RuleGroupContext:
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    def __enter__(self) -> _RuleGroupContext:
+        if _get_current_group() is not None:
+            raise ValueError("Rule groups cannot be nested.")
+        setattr(_current_group, "name", self._name)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        setattr(_current_group, "name", None)
+        return False
+
+
+def group(name: str) -> _RuleGroupContext:
+    """Context manager that assigns a group name to rules defined inside it."""
+    return _RuleGroupContext(name)
 
 
 class RuleRegistry:
@@ -19,19 +46,25 @@ class RuleRegistry:
 
     def __init__(self) -> None:
         self._rules: list[RuleFn] = []
+        self._entries: list[RuleEntry] = []
 
     def register(self, func: RuleFn) -> None:
         """Register a rule function."""
+        group_name = getattr(func, "_group", None)
         self._rules.append(func)
+        self._entries.append((func, group_name))
 
     def clear(self) -> None:
         """Remove all registered rule functions."""
         self._rules.clear()
+        self._entries.clear()
 
-    def run_all(self) -> list[RuleResult]:
+    def run_all(self, group_filter: str | None = None) -> list[RuleResult]:
         """Execute all registered rules and collect results."""
         results: list[RuleResult] = []
-        for func in self._rules:
+        for func, group_name in self._entries:
+            if group_filter is not None and group_name != group_filter:
+                continue
             rule_name = getattr(func, "_rule_name", func.__name__)
             since_date = getattr(func, "_since_date", None)
             if getattr(func, "_skipped", False):
@@ -41,6 +74,7 @@ class RuleRegistry:
                         passed=True,
                         skipped=True,
                         skip_reason=getattr(func, "_skip_reason", None),
+                        group=group_name,
                         since_date=since_date,
                     )
                 )
@@ -48,12 +82,19 @@ class RuleRegistry:
             try:
                 outcome = func()
                 if isinstance(outcome, RuleResult):
+                    if outcome.group is None:
+                        outcome.group = group_name
                     if outcome.since_date is None:
                         outcome.since_date = since_date
                     results.append(outcome)
                 else:
                     results.append(
-                        RuleResult(name=rule_name, passed=True, since_date=since_date)
+                        RuleResult(
+                            name=rule_name,
+                            passed=True,
+                            group=group_name,
+                            since_date=since_date,
+                        )
                     )
             except AssertionError as exc:
                 violations = getattr(exc, "violations", [])
@@ -63,6 +104,7 @@ class RuleRegistry:
                         name=rule_name,
                         passed=False,
                         violations=violations,
+                        group=group_name,
                         since_date=getattr(exc, "since_date", since_date),
                         filtered_violations=filtered_violations,
                     )
@@ -73,6 +115,7 @@ class RuleRegistry:
                         name=rule_name,
                         passed=False,
                         error=exc,
+                        group=group_name,
                         since_date=since_date,
                     )
                 )
@@ -86,13 +129,16 @@ def rule(name: str) -> Callable[[RuleFn], RuleFn]:
     """Decorator for registering architecture rules with a display name."""
 
     def decorator(func: RuleFn) -> RuleFn:
+        group_name = _get_current_group()
         setattr(func, "_rule_name", name)
+        setattr(func, "_group", group_name)
 
         @wraps(func)
         def wrapped() -> None | RuleResult:
             return func()
 
         setattr(wrapped, "_rule_name", name)
+        setattr(wrapped, "_group", group_name)
         if getattr(func, "_skipped", False):
             setattr(wrapped, "_skipped", True)
             setattr(wrapped, "_skip_reason", getattr(func, "_skip_reason", None))

@@ -39,8 +39,12 @@ class ArchetypeFile(pytest.File):
 
         for rule_func in registry._rules:
             rule_name = getattr(rule_func, "_rule_name", rule_func.__name__)
+            group_name = getattr(rule_func, "_group", None)
+            item_name = (
+                f"{group_name}::{rule_name}" if group_name is not None else rule_name
+            )
             yield ArchetypeItem.from_parent(
-                self, name=rule_name, rule_func=rule_func, file_path=self.path
+                self, name=item_name, rule_func=rule_func, file_path=self.path
             )
 
 
