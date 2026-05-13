@@ -10,6 +10,12 @@ from pathlib import Path
 import click
 
 from archetype.dsl.query import load_project
+from archetype.init import (
+    detect_project_structure,
+    find_existing_architecture_py,
+    generate_architecture_py,
+    write_architecture_py,
+)
 from archetype.reporter import print_results
 from archetype.rule import registry
 
@@ -75,3 +81,62 @@ def check(path: Path, group_filter: str | None) -> None:
     failed = sum(1 for result in results if not result.passed and not result.warned)
     print_results(results)
     raise SystemExit(0 if failed == 0 else 1)
+
+
+@cli.command("init")
+@click.argument(
+    "path",
+    required=False,
+    default=".",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+def init(path: Path) -> None:
+    """Detect project structure and generate a starter architecture.py file."""
+    project_path = path.resolve()
+    display_path = str(path)
+    display_arch_path = (
+        "./architecture.py"
+        if display_path in {".", ""}
+        else f"{display_path.rstrip('/')}/architecture.py"
+    )
+
+    existing_file = find_existing_architecture_py(project_path)
+    if existing_file is not None:
+        click.echo(f"architecture.py already exists at {display_arch_path}")
+        if not click.confirm("Overwrite?", default=False):
+            click.echo("\nExisting file kept unchanged.")
+            raise SystemExit(0)
+        existing_file.unlink()
+
+    structure = detect_project_structure(project_path)
+
+    click.echo("\nDetected project structure:")
+    package_name = structure.get("top_level_package")
+    click.echo(f"  Package: {package_name if package_name is not None else 'not detected'}")
+
+    detected_layers = list(structure.get("detected_layers", []))
+    if detected_layers:
+        click.echo(f"  Layers:  {' → '.join(detected_layers)}")
+    else:
+        click.echo("  Layers:  none detected")
+
+    internal_paths = list(structure.get("internal_paths", []))
+    if internal_paths:
+        click.echo(f"  Internal packages: {', '.join(internal_paths)}")
+    else:
+        click.echo("  Internal packages: none detected")
+
+    if package_name is None:
+        click.echo(
+            "\nWarning: project structure could not be auto-detected; "
+            "the generated file will contain placeholder rules."
+        )
+
+    click.echo("\nGenerating architecture.py...\n")
+
+    content = generate_architecture_py(structure)
+    write_architecture_py(project_path, content)
+
+    click.echo(f"architecture.py created at {display_arch_path}")
+    click.echo(f"Run archetype check {path} to see results.")
+    raise SystemExit(0)

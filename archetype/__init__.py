@@ -1,3 +1,18 @@
 """Archetype public package exports."""
 
-from archetype.init import *  # noqa: F401,F403
+from archetype.dsl.query import imports, load_project
+from archetype.rule import group, registry, rule, since, skip, warn
+
+module = None
+
+__all__ = [
+    "rule",
+    "group",
+    "warn",
+    "skip",
+    "since",
+    "registry",
+    "imports",
+    "load_project",
+    "module",
+]
