@@ -34,6 +34,9 @@ dev = [
   "pytest",
   "hatch",
 ]
+# Benchmarks are run with `python benchmarks/run_benchmarks.py`
+# and regression tests with `pytest -m benchmark`.
+benchmarks = []
 
 [project.scripts]
 archetype = "archetype.check:cli"
@@ -45,5 +48,9 @@ archetype = "archetype.plugin.pytest_plugin"
 packages = ["archetype"]
 
 [tool.pytest.ini_options]
+addopts = "-m \"not benchmark\""
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "benchmark: marks tests as benchmarks (deselect with '-m not benchmark')",
+]
