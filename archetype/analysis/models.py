@@ -28,3 +28,5 @@ class RuleResult:
     is_warning: bool = False
     skipped: bool = False
     skip_reason: str | None = None
+    since_date: str | None = None
+    filtered_violations: list[Violation] = field(default_factory=list)

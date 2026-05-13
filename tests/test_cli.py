@@ -260,3 +260,52 @@ def test_cli_outputs_skip_reason_when_provided(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "— skipped-rule (Fixing in refactor-auth branch)" in result.output
+
+
+def test_cli_exits_zero_when_since_filters_out_all_violations(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule, since",
+                "",
+                "@rule('api-must-not-import-db')",
+                "@since('2999-01-01')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    assert "✓ api-must-not-import-db (since 2999-01-01)" in result.output
+    assert "Summary: 1 passed, 0 failed, 0 warned, 0 skipped, 1 total rules." in result.output
+
+
+def test_cli_outputs_since_date_next_to_rule_name(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule, since",
+                "",
+                "@rule('api-must-not-import-db')",
+                "@since('2000-01-01')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    assert "✓ api-must-not-import-db (since 2000-01-01)" in result.output
