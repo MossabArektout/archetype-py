@@ -67,3 +67,20 @@ def test_violation_message_includes_source_target_and_direction(tmp_path: Path) 
     assert "upward" in violations[0].message
 
     db_file.write_text(original, encoding="utf-8")
+
+
+def test_are_ordered_supports_wildcard_layer_patterns(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    db_file = project_path / "simple_project" / "db.py"
+    original = db_file.read_text(encoding="utf-8")
+    db_file.write_text(
+        original + "\nfrom simple_project import api\n",
+        encoding="utf-8",
+    )
+
+    load_project(project_path)
+
+    with pytest.raises(AssertionError):
+        layers(["simple_project.a*", "simple_project.services", "simple_project.db"]).are_ordered()
+
+    db_file.write_text(original, encoding="utf-8")

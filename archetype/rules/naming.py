@@ -13,15 +13,13 @@ from archetype.analysis.ast_utils import (
 )
 from archetype.analysis.imports import path_to_module
 from archetype.analysis.models import Violation
-
-
-def _matches_pattern(module_name: str, pattern: str) -> bool:
-    return module_name == pattern or module_name.startswith(f"{pattern}.")
+from archetype.analysis.pattern import find_matching_nodes
 
 
 def _matched_python_files(module_pattern: str) -> list[Path]:
     root = query_module._current_root
-    if root is None:
+    graph = query_module._current_graph
+    if root is None or graph is None:
         raise RuntimeError(
             "Archetype has not loaded a project yet.\n\n"
             "This usually means one of the following:\n"
@@ -37,10 +35,11 @@ def _matched_python_files(module_pattern: str) -> list[Path]:
             "  load_project(Path(\".\"))"
         )
 
+    matched_modules = set(find_matching_nodes(module_pattern, list(graph.nodes)))
     matched: list[Path] = []
     for file_path in sorted(root.rglob("*.py")):
         module_name = path_to_module(file_path, root)
-        if module_name and _matches_pattern(module_name, module_pattern):
+        if module_name and module_name in matched_modules:
             matched.append(file_path)
     return matched
 

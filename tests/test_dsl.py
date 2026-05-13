@@ -56,6 +56,22 @@ def test_must_only_import_from_raises_and_passes_for_valid_edges() -> None:
     )
 
 
+def test_must_not_import_supports_single_star_wildcard_source_pattern() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError):
+        imports("simple_project.*").must_not_import("simple_project.db")
+
+
+def test_must_only_import_from_supports_double_star_allowed_pattern() -> None:
+    load_project(_fixture_root())
+
+    imports("simple_project.services").must_only_import_from(
+        "simple_project.db",
+        "simple_project.**.tokens",
+    )
+
+
 def test_imports_without_load_project_raises_runtime_error() -> None:
     with pytest.raises(RuntimeError) as excinfo:
         imports("simple_project.api")

@@ -6,10 +6,7 @@ from pathlib import Path
 
 import archetype.dsl.query as query_module
 from archetype.analysis.models import Violation
-
-
-def _matches_pattern(module_name: str, pattern: str) -> bool:
-    return module_name == pattern or module_name.startswith(f"{pattern}.")
+from archetype.analysis.pattern import find_matching_nodes
 
 
 class LayerOrderRule:
@@ -38,18 +35,11 @@ class LayerOrderRule:
             )
 
         violations: list[Violation] = []
+        all_nodes = list(graph.nodes)
         for upper_index, upper_pattern in enumerate(self.layer_patterns):
             for lower_pattern in self.layer_patterns[upper_index + 1 :]:
-                lower_nodes = [
-                    node
-                    for node in graph.nodes
-                    if _matches_pattern(node, lower_pattern)
-                ]
-                upper_nodes = {
-                    node
-                    for node in graph.nodes
-                    if _matches_pattern(node, upper_pattern)
-                }
+                lower_nodes = find_matching_nodes(lower_pattern, all_nodes)
+                upper_nodes = set(find_matching_nodes(upper_pattern, all_nodes))
 
                 for source in lower_nodes:
                     for target in graph.successors(source):

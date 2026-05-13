@@ -6,10 +6,7 @@ from pathlib import Path
 
 import archetype.dsl.query as query_module
 from archetype.analysis.models import Violation
-
-
-def _matches_pattern(module_name: str, pattern: str) -> bool:
-    return module_name == pattern or module_name.startswith(f"{pattern}.")
+from archetype.analysis.pattern import find_matching_nodes, validate_pattern
 
 
 class ModuleBoundaryRule:
@@ -38,10 +35,13 @@ class ModuleBoundaryRule:
     def only_imported_within(self, parent_pattern: str) -> None:
         """Assert protected modules are imported only from inside parent_pattern."""
         violations: list[Violation] = []
+        all_nodes = list(self.graph.nodes)
+        parent_nodes = set(find_matching_nodes(parent_pattern, all_nodes))
+        protected_nodes = set(find_matching_nodes(self.protected_pattern, all_nodes))
 
         for source, target in self.graph.edges:
-            source_in_parent = _matches_pattern(source, parent_pattern)
-            target_is_protected = _matches_pattern(target, self.protected_pattern)
+            source_in_parent = source in parent_nodes
+            target_is_protected = target in protected_nodes
             if not source_in_parent and target_is_protected:
                 violations.append(
                     Violation(
@@ -65,4 +65,5 @@ class ModuleBoundaryRule:
 
 def module(protected_pattern: str) -> ModuleBoundaryRule:
     """Create a module boundary rule for a protected module pattern."""
+    validate_pattern(protected_pattern)
     return ModuleBoundaryRule(protected_pattern)

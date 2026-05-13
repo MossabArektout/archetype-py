@@ -8,10 +8,7 @@ import networkx as nx
 
 import archetype.dsl.query as query_module
 from archetype.analysis.models import Violation
-
-
-def _matches_pattern(module_name: str, pattern: str) -> bool:
-    return module_name == pattern or module_name.startswith(f"{pattern}.")
+from archetype.analysis.pattern import find_matching_nodes
 
 
 def _normalize_cycle(cycle: list[str]) -> tuple[str, ...]:
@@ -46,9 +43,7 @@ def no_cycles(module_pattern: str | None = None) -> None:
     if module_pattern is None:
         target_graph = graph
     else:
-        matched_nodes = [
-            node for node in graph.nodes if _matches_pattern(node, module_pattern)
-        ]
+        matched_nodes = find_matching_nodes(module_pattern, list(graph.nodes))
         target_graph = graph.subgraph(matched_nodes).copy()
 
     raw_cycles = list(nx.simple_cycles(target_graph))

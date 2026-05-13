@@ -8,14 +8,10 @@ import networkx as nx
 
 from archetype.analysis.imports import build_import_graph
 from archetype.analysis.models import Violation
+from archetype.analysis.pattern import find_matching_nodes, validate_pattern
 
 _current_graph: nx.DiGraph | None = None
 _current_root: Path | None = None
-
-
-def _matches_pattern(module_name: str, pattern: str) -> bool:
-    return module_name == pattern or module_name.startswith(f"{pattern}.")
-
 
 def load_project(project_root: Path) -> None:
     """Load a project's import graph into DSL runtime state."""
@@ -46,17 +42,16 @@ class ImportQuery:
                 "  load_project(Path(\".\"))"
             )
         self.graph = _current_graph
-        self.matched_nodes = [
-            node for node in self.graph.nodes if _matches_pattern(node, pattern)
-        ]
+        self.matched_nodes = find_matching_nodes(pattern, list(self.graph.nodes))
 
     def must_not_import(self, target_pattern: str) -> None:
         """Assert that matched source modules do not import modules matching target."""
         violations: list[Violation] = []
+        target_nodes = set(find_matching_nodes(target_pattern, list(self.graph.nodes)))
 
         for source in self.matched_nodes:
             for target in self.graph.successors(source):
-                if _matches_pattern(target, target_pattern):
+                if target in target_nodes:
                     violations.append(
                         Violation(
                             module=source,
@@ -93,13 +88,14 @@ class ImportQuery:
     def must_only_import_from(self, *allowed_patterns: str) -> None:
         """Assert that matched source modules import only from allowed targets."""
         violations: list[Violation] = []
+        allowed_nodes: set[str] = set()
+        graph_nodes = list(self.graph.nodes)
+        for allowed_pattern in allowed_patterns:
+            allowed_nodes.update(find_matching_nodes(allowed_pattern, graph_nodes))
 
         for source in self.matched_nodes:
             for target in self.graph.successors(source):
-                if not any(
-                    _matches_pattern(target, allowed_pattern)
-                    for allowed_pattern in allowed_patterns
-                ):
+                if target not in allowed_nodes:
                     violations.append(
                         Violation(
                             module=source,
@@ -122,4 +118,5 @@ class ImportQuery:
 
 def imports(pattern: str) -> ImportQuery:
     """Create an import query rooted at the provided module/package pattern."""
+    validate_pattern(pattern)
     return ImportQuery(pattern)
