@@ -1,84 +1,52 @@
-![PyPI](https://img.shields.io/pypi/v/archetype) ![Python](https://img.shields.io/pypi/pyversions/archetype) ![License](https://img.shields.io/badge/license-MIT-green) ![CI](https://img.shields.io/github/actions/workflow/status/your-org/your-repo/ci.yml?branch=main)
+[![PyPI version](https://img.shields.io/pypi/v/archetype-py)](https://pypi.org/project/archetype-py/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/archetype-py/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/MossabArektout/archetype-py/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/MossabArektout/archetype-py/ci.yml?branch=main&label=ci)](https://github.com/MossabArektout/archetype-py/actions/workflows/ci.yml)
 
-## Architectural rules should not live in people’s heads
-Architectural rules usually exist in engineers’ heads but nowhere in the codebase.
-Archetype turns those rules into executable Python checks that run in `archetype check` and `pytest`.
 
-```python
-# architecture.py
-from archetype import imports, rule
+<p align="center">
+  <img src="./assets/logo.png" alt="archetype-py logo" width="280"/>
+</p>
 
-@rule("api does not import db")
-def api_not_db() -> None:
-    imports("myapp.api").must_not_import("myapp.db")
 
-@rule("services only import db")
-def services_only_db() -> None:
-    imports("myapp.services").must_only_import_from("myapp.db")
-```
+# archetype-py
 
-```text
-$ archetype check .
-✓ api does not import db
-✗ services only import db
-  - myapp.services.user -> myapp.cache: Module 'myapp.services.user' imports 'myapp.cache', which is outside the allowed set: ('myapp.db',).
-Summary: 1 passed, 1 failed, 2 total rules.
-```
+> Enforce architectural boundaries in Python before they become technical debt.
 
-## Installation
-```bash
-pip install archetype-py
-```
+archetype-py lets teams define architecture rules like:
 
-## Quickstart
-1. Install Archetype.
+- “API must not depend on infrastructure”
+- “No cycles between services”
+- “Only repositories can access the database”
 
-```bash
-pip install archetype-py
-```
+…and automatically enforce them in CI, locally, and in pytest.
 
-2. Create `architecture.py` in your project root.
+---
 
-```bash
-touch architecture.py
-```
+## Why Developers Use archetype-py
 
-3. Add your first rule with the imports DSL.
+Most Python tooling checks:
 
-```python
-# architecture.py
-from archetype import imports, rule
+- formatting
+- typing
+- linting
+- correctness
 
-@rule("api does not import db")
-def api_not_db() -> None:
-    imports("myapp.api").must_not_import("myapp.db")
-```
+But almost nothing protects **system structure**.
 
-4. Run the checker.
+As projects grow, architecture drifts silently:
+- layers start leaking
+- imports become tangled
+- boundaries disappear
+- coupling spreads
 
-```bash
-archetype check .
-```
+archetype-py turns architectural intent into executable checks.
 
-5. Read the output and fix violations.
+---
 
-```text
-✓ api does not import db
-Summary: 1 passed, 0 failed, 1 total rules.
-```
+## See It In Action
 
-If your project already runs `pytest`, running `pytest` is sufficient because Archetype rules are collected and executed by the pytest plugin.
-
-## Why Archetype exists
-Style tools enforce how code looks. Type tools enforce what values can flow through code. Architectural tools enforce which parts of the system are allowed to depend on which other parts.
-
-Pylint and similar linters are strong at local code quality checks, and Mypy is strong at static type correctness. Neither is designed to express team-level dependency contracts like “API cannot import DB” or “internal modules are private outside their package boundary.”
-
-Archetype keeps rules in `architecture.py` as normal Python functions, not static YAML declarations. That makes rules executable, reviewable, testable, and easy to evolve with the codebase using the same language and tooling your team already uses.
-
-## Built-in rules reference
-### `layers`
-Enforces that lower layers do not import upper layers.
+### Define architecture rules
 
 ```python
 from archetype import rule
@@ -89,90 +57,147 @@ def layer_order() -> None:
     layers(["myapp.api", "myapp.services", "myapp.db"]).are_ordered()
 ```
 
-### `module` (module boundaries)
-Enforces that a protected internal module is only imported from an allowed parent scope.
+### Run checks
 
-```python
-from archetype import rule
-from archetype.rules import module
-
-@rule("internal auth is private")
-def auth_boundary() -> None:
-    module("myapp.auth.internal").only_imported_within("myapp.auth")
+```bash
+archetype check .
 ```
 
-### `classes_in` and `functions_in` (naming conventions)
-Enforces class naming patterns and required top-level functions in matched modules.
+### Get actionable feedback
 
-```python
-from archetype import rule
-from archetype.rules import classes_in, functions_in
+```text
+✖ API cannot depend on DB internals
 
-@rule("service classes end with Service")
-def class_names() -> None:
-    classes_in("myapp.services").all_match(r".*Service$")
-
-@rule("api modules expose handle")
-def api_handle_exists() -> None:
-    functions_in("myapp.api").must_include("handle")
+app.api.users
+└── imports app.db.internal.session
 ```
 
-### `no_cycles`
-Enforces that there are no import cycles in the whole project or in a selected module scope.
+---
 
-```python
-from archetype import rule
-from archetype.rules import no_cycles
+## Quick Start
 
-@rule("no cycles in services")
-def services_no_cycles() -> None:
-    no_cycles("myapp.services")
+### 1. Install
+
+```bash
+pip install archetype-py
 ```
 
-## Writing custom rules
-```python
-from archetype import imports, rule
+### 2. Generate a starter architecture file
 
-@rule("custom architecture policy")
-def custom_policy() -> None:
-    imports("myapp.api").must_not_import("myapp.db")
-    imports("myapp.services").has_no_cycles()
-    imports("myapp.services").must_only_import_from("myapp.db", "myapp.shared")
+```bash
+archetype init .
 ```
 
-Any Python function decorated with `@rule` that returns without raising is a passing rule. Rules can use the full Python language, so you can encode architecture constraints that do not fit generic linters or static config.
+### 3. Define your rules
 
-## CI integration
+Edit:
+
+```text
+architecture.py
+```
+
+### 4. Run checks
+
+```bash
+archetype check .
+```
+
+### 5. Add to CI
+
 ```yaml
-name: Archetype Check
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-jobs:
-  archetype:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: |
-          python -m pip install --upgrade pip
-          pip install archetype-py
-      - run: archetype check .
+- run: archetype check .
 ```
 
-If your CI already runs `pytest`, no additional CI configuration is required.
+Done.
 
-## Community
-If Archetype is useful to you or your team, the best way to support the project is to [star the repository on GitHub](https://github.com/MossabArektout/archetype-py/stargazers).
+---
 
-- Star the repository on GitHub: [github.com/MossabArektout/archetype-py](https://github.com/MossabArektout/archetype-py)
-- Open an issue to report a bug or suggest a feature: [github.com/MossabArektout/archetype-py/issues/new](https://github.com/MossabArektout/archetype-py/issues/new)
-- Share the project with teammates or on social media if it solved a real problem for you.
-- Contribute code or documentation: [CONTRIBUTING.md](./CONTRIBUTING.md)
+## Features
 
-The project is new, and every star, issue, and share genuinely helps it reach more developers who have the same problem.
+### Architecture Rules
+- Forbidden imports
+- Allowlisted imports
+- Layer enforcement
+- Import cycle detection
+- Protected module boundaries
+
+### Workflow Features
+- Rule grouping
+- Warning-level rules
+- Temporary rule skips with context
+- Changed-file enforcement (`since`)
+- Pytest integration
+- CI-friendly exit codes
+
+
+
+## Perfect For
+
+- Growing Python monoliths
+- Modular backends
+- Clean Architecture projects
+- Hexagonal Architecture
+- Domain-driven design
+- Teams scaling beyond “tribal knowledge”
+
+---
+
+## Installation
+
+```bash
+pip install archetype-py
+```
+
+Requires Python 3.11+.
+
+---
+
+## CI Integration
+
+archetype-py is designed for automation.
+
+Run it:
+- locally
+- in pre-commit
+- in GitHub Actions
+- inside pytest
+- in your CI pipeline
+
+Architecture checks become part of your delivery workflow.
+
+---
+
+## Roadmap
+
+Planned improvements include:
+- Graph visualization
+- Architecture diffing
+- IDE integrations
+- Rich HTML reports
+- More built-in rule primitives
+
+---
+
+## Contributing
+
+Contributions are welcome:
+- bug fixes
+- rule ideas
+- docs improvements
+- integrations
+- performance work
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+---
+
+## Support The Project
+
+If archetype-py helps your team:
+
+⭐ Star the repository  
+🐛 Open issues  
+🧠 Share feedback  
+🔧 Contribute improvements
+
+Every star genuinely helps the project grow.
