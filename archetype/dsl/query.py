@@ -13,12 +13,13 @@ from archetype.analysis.pattern import find_matching_nodes, validate_pattern
 _current_graph: nx.DiGraph | None = None
 _current_root: Path | None = None
 
-def load_project(project_root: Path) -> None:
+def load_project(project_root: Path, src_root: Path | None = None) -> None:
     """Load a project's import graph into DSL runtime state."""
     global _current_graph, _current_root
-    resolved_root = project_root.resolve()
-    _current_graph = build_import_graph(resolved_root)
-    _current_root = resolved_root
+    resolved_project_root = project_root.resolve()
+    analysis_root = src_root.resolve() if src_root is not None else resolved_project_root
+    _current_graph = build_import_graph(analysis_root)
+    _current_root = analysis_root
 
 
 class ImportQuery:

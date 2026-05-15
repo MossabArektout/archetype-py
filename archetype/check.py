@@ -52,7 +52,9 @@ def check(path: Path, group_filter: str | None) -> None:
         raise SystemExit(1)
 
     registry.clear()
-    load_project(project_path)
+    structure = detect_project_structure(project_path)
+    src_root = project_path / "src" if structure.get("layout") == "src" else None
+    load_project(project_path, src_root=src_root)
 
     module_name = f"_archetype_user_architecture_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(module_name, architecture_file)
@@ -111,7 +113,14 @@ def init(path: Path) -> None:
     structure = detect_project_structure(project_path)
 
     click.echo("\nDetected project structure:")
+    layout = structure.get("layout")
     package_name = structure.get("top_level_package")
+    if layout == "src" and isinstance(package_name, str):
+        click.echo(f"  Layout:  src (src/{package_name})")
+    elif layout == "flat" and isinstance(package_name, str):
+        click.echo(f"  Layout:  flat ({package_name}/)")
+    else:
+        click.echo("  Layout:  unknown")
     click.echo(f"  Package: {package_name if package_name is not None else 'not detected'}")
 
     detected_layers = list(structure.get("detected_layers", []))
