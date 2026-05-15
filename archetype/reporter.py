@@ -67,7 +67,24 @@ def _violation_lines(result: RuleResult) -> list[str]:
     return lines
 
 
-def format_results(results: list[RuleResult]) -> str:
+def _should_render_result(result: RuleResult, quiet: bool) -> bool:
+    if not quiet:
+        return True
+    if result.skipped:
+        return False
+    return not (result.passed and not result.warned)
+
+
+def _filtered_group_results(
+    group_results: list[RuleResult],
+    quiet: bool,
+) -> list[RuleResult]:
+    if not quiet:
+        return group_results
+    return [result for result in group_results if _should_render_result(result, quiet=True)]
+
+
+def format_results(results: list[RuleResult], quiet: bool = False) -> str:
     """Build a complete plain-text report for rule execution results."""
     lines: list[str] = []
     skipped = sum(1 for result in results if result.skipped)
@@ -75,14 +92,19 @@ def format_results(results: list[RuleResult]) -> str:
     passed = sum(1 for result in results if result.passed and not result.skipped)
     failed = len(results) - passed - warned - skipped
 
-    for idx, (group_name, group_results) in enumerate(_group_results(results)):
-        if idx > 0:
+    rendered_sections = 0
+    for group_name, group_results in _group_results(results):
+        visible_group_results = _filtered_group_results(group_results, quiet)
+        if quiet and group_name is not None and not visible_group_results:
+            continue
+
+        if rendered_sections > 0:
             lines.append("")
         section_name = "General" if group_name is None else group_name
         lines.append(section_name)
         lines.append("=" * len(section_name))
 
-        for result in group_results:
+        for result in visible_group_results:
             if result.skipped:
                 line = f"  — {result.name}"
                 if result.skip_reason:
@@ -105,8 +127,9 @@ def format_results(results: list[RuleResult]) -> str:
                     lines.append(f"    - Rule error: {result.error}")
 
         lines.append(
-            f"  {_group_passed(group_results)} passed, {_group_failed(group_results)} failed"
+            f"  {_group_passed(visible_group_results)} passed, {_group_failed(visible_group_results)} failed"
         )
+        rendered_sections += 1
 
     lines.append(
         f"Summary: {passed} passed, {failed} failed, {warned} warned, {skipped} skipped, {len(results)} total rules."
@@ -114,7 +137,7 @@ def format_results(results: list[RuleResult]) -> str:
     return "\n".join(lines)
 
 
-def print_results(results: list[RuleResult]) -> None:
+def print_results(results: list[RuleResult], quiet: bool = False) -> None:
     """Print rule results using rich colors for pass/fail states."""
     console = Console()
     skipped = sum(1 for result in results if result.skipped)
@@ -122,15 +145,20 @@ def print_results(results: list[RuleResult]) -> None:
     passed = sum(1 for result in results if result.passed and not result.skipped)
     failed = len(results) - passed - warned - skipped
 
-    for idx, (group_name, group_results) in enumerate(_group_results(results)):
-        if idx > 0:
+    rendered_sections = 0
+    for group_name, group_results in _group_results(results):
+        visible_group_results = _filtered_group_results(group_results, quiet)
+        if quiet and group_name is not None and not visible_group_results:
+            continue
+
+        if rendered_sections > 0:
             console.print("")
 
         section_name = "General" if group_name is None else group_name
         console.print(f"[bold]{section_name}[/bold]")
         console.print(f"[bold]{'=' * len(section_name)}[/bold]")
 
-        for result in group_results:
+        for result in visible_group_results:
             if result.skipped:
                 line = f"  — {result.name}"
                 if result.skip_reason:
@@ -162,8 +190,9 @@ def print_results(results: list[RuleResult]) -> None:
                 console.print(f"[red]    - Rule error: {result.error}[/red]")
 
         console.print(
-            f"[bold]  {_group_passed(group_results)} passed, {_group_failed(group_results)} failed[/bold]"
+            f"[bold]  {_group_passed(visible_group_results)} passed, {_group_failed(visible_group_results)} failed[/bold]"
         )
+        rendered_sections += 1
 
     summary = f"Summary: {passed} passed, {failed} failed, {warned} warned, {skipped} skipped, {len(results)} total rules."
     if failed > 0:
