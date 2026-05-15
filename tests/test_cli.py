@@ -103,6 +103,34 @@ def test_cli_prints_violation_messages_for_failing_rules(tmp_path: Path) -> None
     assert "must not import" in normalized_output
 
 
+def test_cli_shows_allowed_set_once_for_must_only_import_from(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-only-services')",
+                "def _rule_api_only_services() -> None:",
+                "    imports('simple_project.api').must_only_import_from('simple_project.services')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 1
+    assert "Allowed imports for 'simple_project.api': simple_project.services." in result.output
+    assert result.output.count(
+        "Allowed imports for 'simple_project.api': simple_project.services."
+    ) == 1
+    assert "simple_project.api -> simple_project.db" in result.output
+    assert "outside the allowed set" not in result.output
+
+
 def test_cli_summary_reflects_passing_and_failing_counts(tmp_path: Path) -> None:
     project_path = _make_project_copy(tmp_path)
     (project_path / "architecture.py").write_text(

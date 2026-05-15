@@ -99,6 +99,7 @@ class RuleRegistry:
             except AssertionError as exc:
                 violations = getattr(exc, "violations", [])
                 filtered_violations = getattr(exc, "filtered_violations", [])
+                violation_context = getattr(exc, "violation_context", [])
                 results.append(
                     RuleResult(
                         name=rule_name,
@@ -107,6 +108,7 @@ class RuleRegistry:
                         group=group_name,
                         since_date=getattr(exc, "since_date", since_date),
                         filtered_violations=filtered_violations,
+                        violation_context=violation_context,
                     )
                 )
             except Exception as exc:  # noqa: BLE001
@@ -165,10 +167,12 @@ def warn(func: RuleFn) -> RuleFn:
             return RuleResult(name=rule_name, passed=True, is_warning=True)
         except AssertionError as exc:
             violations = getattr(exc, "violations", [])
+            violation_context = getattr(exc, "violation_context", [])
             return RuleResult(
                 name=rule_name,
                 passed=False,
                 violations=violations,
+                violation_context=violation_context,
                 warned=True,
                 is_warning=True,
             )
@@ -264,6 +268,11 @@ def since(date_str: str) -> Callable[[RuleFn], RuleFn]:
                 setattr(filtered_exc, "violations", scoped_violations)
                 setattr(filtered_exc, "since_date", date_str)
                 setattr(filtered_exc, "filtered_violations", filtered_violations)
+                setattr(
+                    filtered_exc,
+                    "violation_context",
+                    getattr(exc, "violation_context", []),
+                )
                 raise filtered_exc from None
 
             if isinstance(outcome, RuleResult):

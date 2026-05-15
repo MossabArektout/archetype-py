@@ -89,6 +89,8 @@ class ArchetypeItem(pytest.Item):
             violations = getattr(err, "violations", None)
             if violations:
                 lines = [f"Rule '{self.name}' violations:"]
+                for context_line in getattr(err, "violation_context", []):
+                    lines.append(f"  {context_line}")
                 lines.extend(f"  - {format_violation(violation)}" for violation in violations)
                 return "\n".join(lines)
         return super().repr_failure(excinfo, style=style)

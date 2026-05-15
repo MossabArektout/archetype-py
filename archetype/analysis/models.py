@@ -31,3 +31,4 @@ class RuleResult:
     group: str | None = None
     since_date: str | None = None
     filtered_violations: list[Violation] = field(default_factory=list)
+    violation_context: list[str] = field(default_factory=list)

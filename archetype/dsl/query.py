@@ -101,16 +101,19 @@ class ImportQuery:
                             module=source,
                             file=Path("<unknown>"),
                             line=0,
-                            message=(
-                                f"Module '{source}' imports '{target}', which is outside "
-                                f"the allowed set: {allowed_patterns}."
-                            ),
+                            message=f"Module '{source}' imports disallowed module '{target}'.",
                         )
                     )
 
         if violations:
             exc = AssertionError(
                 f"Disallowed imports found for '{self.pattern}': {len(violations)} edge(s)."
+            )
+            allowed_summary = ", ".join(allowed_patterns) if allowed_patterns else "<none>"
+            setattr(
+                exc,
+                "violation_context",
+                [f"Allowed imports for '{self.pattern}': {allowed_summary}."],
             )
             setattr(exc, "violations", violations)
             raise exc
