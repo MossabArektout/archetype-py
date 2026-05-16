@@ -55,11 +55,18 @@ def cli() -> None:
     show_default=True,
     help="Output format.",
 )
+@click.option(
+    "--no-cache",
+    is_flag=True,
+    default=False,
+    help="Force a fresh import graph rebuild and ignore any cached graph.",
+)
 def check(
     path: Path,
     group_filter: str | None,
     quiet: bool,
     output_format: str,
+    no_cache: bool,
 ) -> None:
     """Run architecture rules against a Python project."""
     project_path = path.resolve()
@@ -75,7 +82,7 @@ def check(
     registry.clear()
     structure = detect_project_structure(project_path)
     src_root = project_path / "src" if structure.get("layout") == "src" else None
-    load_project(project_path, src_root=src_root)
+    load_project(project_path, src_root=src_root, no_cache=no_cache)
 
     module_name = f"_archetype_user_architecture_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(module_name, architecture_file)

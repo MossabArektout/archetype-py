@@ -443,6 +443,32 @@ def test_cli_group_flag_with_unknown_group_returns_zero_rules(
     assert "Summary: 0 passed, 0 failed, 0 warned, 0 skipped, 0 total rules." in result.output
 
 
+def test_cli_no_cache_flag_passes_no_cache_to_load_project(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
+
+    captured: dict[str, bool | None] = {"no_cache": None}
+
+    def fake_load_project(
+        _project_root: Path,
+        src_root: Path | None = None,
+        no_cache: bool = False,
+    ) -> None:
+        _ = src_root
+        captured["no_cache"] = no_cache
+
+    monkeypatch.setattr("archetype.check.load_project", fake_load_project)
+    monkeypatch.setattr("archetype.check.registry.run_all", lambda *, group_filter=None: [])
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--no-cache"])
+
+    assert result.exit_code == 0
+    assert captured["no_cache"] is True
+
+
 def test_cli_quiet_flag_is_accepted(tmp_path: Path) -> None:
     project_path = _make_project_copy(tmp_path)
     (project_path / "architecture.py").write_text(
