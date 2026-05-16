@@ -13,6 +13,24 @@ from archetype.analysis.pattern import find_matching_nodes, validate_pattern
 _current_graph: nx.DiGraph | None = None
 _current_root: Path | None = None
 
+
+def _not_loaded_project_message() -> str:
+    return (
+        "Archetype has not loaded a project yet.\n\n"
+        "This usually means one of the following:\n"
+        "  - You are calling imports() or module() outside of a @rule function\n"
+        "  - You are running architecture.py directly with python architecture.py\n"
+        "    instead of through archetype check or pytest\n\n"
+        "To fix this, run your rules using one of these commands:\n"
+        "  archetype check .\n"
+        "  pytest\n\n"
+        "If you need to load a project programmatically use:\n"
+        "  from archetype import load_project\n"
+        "  from pathlib import Path\n"
+        "  load_project(Path(\".\"))"
+    )
+
+
 def load_project(project_root: Path, src_root: Path | None = None) -> None:
     """Load a project's import graph into DSL runtime state."""
     global _current_graph, _current_root
@@ -28,20 +46,7 @@ class ImportQuery:
     def __init__(self, pattern: str) -> None:
         self.pattern = pattern
         if _current_graph is None:
-            raise RuntimeError(
-                "Archetype has not loaded a project yet.\n\n"
-                "This usually means one of the following:\n"
-                "  - You are calling imports() or module() outside of a @rule function\n"
-                "  - You are running architecture.py directly with python architecture.py\n"
-                "    instead of through archetype check or pytest\n\n"
-                "To fix this, run your rules using one of these commands:\n"
-                "  archetype check .\n"
-                "  pytest\n\n"
-                "If you need to load a project programmatically use:\n"
-                "  from archetype import load_project\n"
-                "  from pathlib import Path\n"
-                "  load_project(Path(\".\"))"
-            )
+            raise RuntimeError(_not_loaded_project_message())
         self.graph = _current_graph
         self.matched_nodes = find_matching_nodes(pattern, list(self.graph.nodes))
 
@@ -68,6 +73,45 @@ class ImportQuery:
         if violations:
             exc = AssertionError(
                 f"Forbidden imports found: {len(violations)} edge(s) from "
+                f"'{self.pattern}' to '{target_pattern}'."
+            )
+            setattr(exc, "violations", violations)
+            raise exc
+
+    def must_not_depend_on(self, target_pattern: str) -> None:
+        """Assert that matched source modules do not transitively depend on target.
+
+        Example:
+            # Fails only on direct edge source -> target.
+            imports("myapp.api").must_not_import("myapp.db")
+
+            # Fails when target is reachable through any dependency chain.
+            imports("myapp.api").must_not_depend_on("myapp.db")
+        """
+        if _current_graph is None or self.graph is None:
+            raise RuntimeError(_not_loaded_project_message())
+
+        violations: list[Violation] = []
+        target_nodes = find_matching_nodes(target_pattern, list(self.graph.nodes))
+
+        for source in self.matched_nodes:
+            reachable = nx.descendants(self.graph, source)
+            for target in target_nodes:
+                if target not in reachable:
+                    continue
+                path = nx.shortest_path(self.graph, source=source, target=target)
+                violations.append(
+                    Violation(
+                        module=source,
+                        file=Path("<unknown>"),
+                        line=0,
+                        message=" → ".join(path),
+                    )
+                )
+
+        if violations:
+            exc = AssertionError(
+                f"Forbidden transitive dependencies found: {len(violations)} path(s) from "
                 f"'{self.pattern}' to '{target_pattern}'."
             )
             setattr(exc, "violations", violations)
