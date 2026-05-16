@@ -1,11 +1,15 @@
 """Tests for rule registration and execution behavior."""
 
+import time
+import importlib
 from pathlib import Path
 
 import pytest
 
 from archetype.analysis.models import Violation
 from archetype.rule import group, registry, rule, skip, warn
+
+rule_module = importlib.import_module("archetype.rule")
 
 
 @pytest.fixture(autouse=True)
@@ -272,3 +276,74 @@ def test_rule_result_includes_group_when_rule_registered_in_group() -> None:
     assert len(results) == 1
     assert results[0].name == "grouped-rule"
     assert results[0].group == "Layer boundaries"
+
+
+def test_rule_with_timeout_completing_in_time_passes_normally() -> None:
+    @rule("fast-rule", timeout=0.2)
+    def fast_rule() -> None:
+        time.sleep(0.01)
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].passed is True
+    assert results[0].timed_out is False
+
+
+def test_rule_exceeding_timeout_is_marked_timed_out_and_failed() -> None:
+    @rule("slow-rule", timeout=0.01)
+    def slow_rule() -> None:
+        time.sleep(0.05)
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].passed is False
+    assert results[0].timed_out is True
+
+
+def test_timed_out_rule_result_includes_timeout_seconds() -> None:
+    @rule("slow-rule", timeout=0.01)
+    def slow_rule() -> None:
+        time.sleep(0.05)
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].timeout_seconds == 0.01
+
+
+def test_rule_without_timeout_avoids_thread_execution_path(monkeypatch) -> None:
+    class GuardThread:
+        def __init__(self, *args, **kwargs) -> None:  # noqa: D401
+            raise AssertionError("thread should not be used without timeout")
+
+    monkeypatch.setattr(rule_module.threading, "Thread", GuardThread)
+
+    @rule("no-timeout-rule")
+    def no_timeout_rule() -> None:
+        return None
+
+    results = registry.run_all()
+
+    assert len(results) == 1
+    assert results[0].passed is True
+    assert results[0].timed_out is False
+
+
+def test_registry_continues_executing_rules_after_timeout() -> None:
+    @rule("slow-rule", timeout=0.01)
+    def slow_rule() -> None:
+        time.sleep(0.05)
+
+    @rule("fast-rule")
+    def fast_rule() -> None:
+        return None
+
+    results = registry.run_all()
+    by_name = {result.name: result for result in results}
+
+    assert len(results) == 2
+    assert by_name["slow-rule"].timed_out is True
+    assert by_name["slow-rule"].passed is False
+    assert by_name["fast-rule"].passed is True

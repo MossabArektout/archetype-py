@@ -308,6 +308,53 @@ def test_cli_summary_includes_skipped_count(tmp_path: Path) -> None:
     assert "Summary: 1 passed, 0 failed, 0 warned, 1 skipped, 2 total rules." in result.output
 
 
+def test_cli_exits_one_when_rule_times_out(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "import time",
+                "from archetype import rule",
+                "",
+                "@rule('slow-rule', timeout=0.01)",
+                "def _slow_rule() -> None:",
+                "    time.sleep(0.05)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 1
+
+
+def test_cli_prints_timeout_indicator_with_clock_and_duration(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "import time",
+                "from archetype import rule",
+                "",
+                "@rule('slow-rule', timeout=0.01)",
+                "def _slow_rule() -> None:",
+                "    time.sleep(0.05)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert "⏱ slow-rule (timed out after 0.01s)" in result.output
+    assert "Summary: 0 passed, 0 failed, 0 warned, 0 skipped, 1 timeout, 1 total rules." in result.output
+
+
 def test_cli_outputs_skip_reason_when_provided(tmp_path: Path) -> None:
     project_path = _make_project_copy(tmp_path)
     (project_path / "architecture.py").write_text(

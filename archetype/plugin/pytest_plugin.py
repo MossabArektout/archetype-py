@@ -75,6 +75,17 @@ class ArchetypeItem(pytest.Item):
         if outcome.skipped:
             pytest.skip(outcome.skip_reason or "Rule temporarily skipped")
 
+        if outcome.timed_out:
+            timeout_seconds = outcome.timeout_seconds
+            if timeout_seconds is None:
+                timeout_display = "<unknown>"
+            else:
+                timeout_display = f"{float(timeout_seconds):g}"
+            pytest.fail(
+                f"Rule timed out after {timeout_display} seconds.",
+                pytrace=False,
+            )
+
         if outcome.warned and outcome.violations:
             details = "; ".join(
                 format_violation(violation) for violation in outcome.violations

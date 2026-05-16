@@ -79,13 +79,45 @@ class RuleRegistry:
                     )
                 )
                 continue
+            timeout = getattr(func, "_timeout", None)
             try:
-                outcome = func()
+                if timeout is None:
+                    outcome = func()
+                else:
+                    outcome: RuleResult | None | object = None
+                    caught_error: BaseException | None = None
+
+                    def _run_rule() -> None:
+                        nonlocal outcome, caught_error
+                        try:
+                            outcome = func()
+                        except BaseException as exc:  # noqa: BLE001
+                            caught_error = exc
+
+                    thread = threading.Thread(target=_run_rule, daemon=True)
+                    thread.start()
+                    thread.join(timeout=float(timeout))
+                    if thread.is_alive():
+                        results.append(
+                            RuleResult(
+                                name=rule_name,
+                                passed=False,
+                                timed_out=True,
+                                timeout_seconds=float(timeout),
+                                group=group_name,
+                                since_date=since_date,
+                            )
+                        )
+                        continue
+                    if caught_error is not None:
+                        raise caught_error
                 if isinstance(outcome, RuleResult):
                     if outcome.group is None:
                         outcome.group = group_name
                     if outcome.since_date is None:
                         outcome.since_date = since_date
+                    if outcome.timeout_seconds is None and timeout is not None:
+                        outcome.timeout_seconds = float(timeout)
                     results.append(outcome)
                 else:
                     results.append(
@@ -127,13 +159,14 @@ class RuleRegistry:
 registry = RuleRegistry()
 
 
-def rule(name: str) -> Callable[[RuleFn], RuleFn]:
+def rule(name: str, *, timeout: float | None = None) -> Callable[[RuleFn], RuleFn]:
     """Decorator for registering architecture rules with a display name."""
 
     def decorator(func: RuleFn) -> RuleFn:
         group_name = _get_current_group()
         setattr(func, "_rule_name", name)
         setattr(func, "_group", group_name)
+        setattr(func, "_timeout", timeout)
 
         @wraps(func)
         def wrapped() -> None | RuleResult:
@@ -141,6 +174,7 @@ def rule(name: str) -> Callable[[RuleFn], RuleFn]:
 
         setattr(wrapped, "_rule_name", name)
         setattr(wrapped, "_group", group_name)
+        setattr(wrapped, "_timeout", timeout)
         if getattr(func, "_skipped", False):
             setattr(wrapped, "_skipped", True)
             setattr(wrapped, "_skip_reason", getattr(func, "_skip_reason", None))
