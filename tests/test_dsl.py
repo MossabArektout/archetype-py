@@ -95,6 +95,44 @@ def test_must_not_import_supports_single_star_wildcard_source_pattern() -> None:
         imports("simple_project.*").must_not_import("simple_project.db")
 
 
+def test_must_not_depend_on_raises_for_transitive_dependency() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError):
+        imports("simple_project.main").must_not_depend_on("simple_project.db")
+
+
+def test_must_not_depend_on_passes_when_no_transitive_dependency_exists() -> None:
+    load_project(_fixture_root())
+
+    imports("simple_project.db").must_not_depend_on("simple_project.api")
+
+
+def test_must_not_depend_on_catches_direct_dependencies_too() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError):
+        imports("simple_project.api").must_not_depend_on("simple_project.db")
+
+
+def test_must_not_depend_on_violation_message_shows_full_dependency_path() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError) as excinfo:
+        imports("simple_project.main").must_not_depend_on("simple_project.db")
+
+    violations = getattr(excinfo.value, "violations", [])
+    assert violations
+    assert "→" in violations[0].message
+    assert "simple_project.main → simple_project.api → simple_project.db" in violations[0].message
+
+
+def test_must_not_depend_on_without_load_project_raises_runtime_error() -> None:
+    with pytest.raises(RuntimeError) as excinfo:
+        imports("simple_project.api").must_not_depend_on("simple_project.db")
+    assert "archetype check" in str(excinfo.value)
+
+
 def test_must_only_import_from_supports_double_star_allowed_pattern() -> None:
     load_project(_fixture_root())
 
