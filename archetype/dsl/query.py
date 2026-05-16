@@ -6,6 +6,13 @@ from pathlib import Path
 
 import networkx as nx
 
+from archetype.analysis.cache import (
+    compute_file_signatures,
+    ensure_gitignore_entry,
+    is_cache_valid,
+    load_cached_graph,
+    save_cached_graph,
+)
 from archetype.analysis.imports import build_import_graph
 from archetype.analysis.models import Violation
 from archetype.analysis.pattern import find_matching_nodes, validate_pattern
@@ -32,12 +39,29 @@ def _not_loaded_project_message() -> str:
     )
 
 
-def load_project(project_root: Path, src_root: Path | None = None) -> None:
+def load_project(
+    project_root: Path,
+    src_root: Path | None = None,
+    no_cache: bool = False,
+) -> None:
     """Load a project's import graph into DSL runtime state."""
     global _current_graph, _current_root, _project_root
     resolved_project_root = project_root.resolve()
     analysis_root = src_root.resolve() if src_root is not None else resolved_project_root
-    _current_graph = build_import_graph(analysis_root)
+
+    if no_cache:
+        graph = build_import_graph(analysis_root)
+    else:
+        current_signatures = compute_file_signatures(resolved_project_root)
+        cached_graph, cached_signatures = load_cached_graph(resolved_project_root)
+        if is_cache_valid(cached_signatures, current_signatures):
+            graph = cached_graph
+        else:
+            graph = build_import_graph(analysis_root)
+            save_cached_graph(resolved_project_root, graph, current_signatures)
+            ensure_gitignore_entry(resolved_project_root)
+
+    _current_graph = graph
     _current_root = analysis_root
     _project_root = resolved_project_root
 
