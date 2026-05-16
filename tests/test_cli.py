@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -463,6 +464,84 @@ def test_cli_quiet_flag_is_accepted(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "No such option" not in result.output
+
+
+def test_cli_format_flag_is_accepted(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('pass-rule')",
+                "def _pass_rule() -> None:",
+                "    imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--format", "json"])
+
+    assert result.exit_code == 0
+    assert "No such option" not in result.output
+    payload = json.loads(result.output)
+    assert payload["summary"]["total"] == 1
+
+
+def test_cli_format_json_outputs_parseable_json(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--format", "json"])
+
+    payload = json.loads(result.output)
+    assert isinstance(payload, dict)
+    assert "summary" in payload
+    assert "rules" in payload
+
+
+def test_cli_format_json_summary_counts_are_correct(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--format", "json"])
+
+    payload = json.loads(result.output)
+    assert payload["summary"] == {
+        "passed": 2,
+        "failed": 1,
+        "warned": 2,
+        "skipped": 1,
+        "total": 6,
+    }
+
+
+def test_cli_format_text_behavior_is_unchanged(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    default_result = runner.invoke(cli, ["check", str(project_path)])
+    text_result = runner.invoke(cli, ["check", str(project_path), "--format", "text"])
+
+    assert default_result.exit_code == text_result.exit_code
+    assert default_result.output == text_result.output
+
+
+def test_cli_exit_code_is_identical_for_text_and_json_formats(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    text_result = runner.invoke(cli, ["check", str(project_path), "--format", "text"])
+    json_result = runner.invoke(cli, ["check", str(project_path), "--format", "json"])
+
+    assert text_result.exit_code == json_result.exit_code
 
 
 def test_cli_quiet_mode_hides_passing_rules(tmp_path: Path) -> None:
