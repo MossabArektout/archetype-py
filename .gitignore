@@ -38,3 +38,4 @@ htmlcov/
 .hatch/
 LAUNCH.md
 ROADMAP.md
+.archetype_cache
