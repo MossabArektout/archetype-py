@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
+from pathlib import Path
 
 from rich.console import Console
 
@@ -29,7 +30,35 @@ def _extract_target(violation: Violation) -> str:
 def format_violation(violation: Violation) -> str:
     """Format a violation into a concise, actionable message."""
     target = _extract_target(violation)
+    location = _violation_location(violation)
+    if location is not None:
+        return f"{location} {violation.module} -> {target}: {violation.message}"
     return f"{violation.module} -> {target}: {violation.message}"
+
+
+def _violation_location(violation: Violation) -> str | None:
+    if violation.line <= 0 or str(violation.file) in {"", "<unknown>"}:
+        return None
+
+    raw_file = Path(violation.file)
+    file_path = raw_file.resolve() if raw_file.is_absolute() else raw_file
+    display_path = file_path
+
+    try:
+        import archetype.dsl.query as query_module
+
+        project_root = (
+            getattr(query_module, "_project_root", None)
+            or getattr(query_module, "_current_root", None)
+        )
+        if project_root is not None:
+            display_path = file_path.relative_to(Path(project_root).resolve())
+        elif file_path.is_absolute():
+            display_path = file_path.relative_to(Path.cwd().resolve())
+    except Exception:  # noqa: BLE001
+        display_path = raw_file
+
+    return f"{display_path.as_posix()}:{violation.line}"
 
 
 def _format_rule_name(result: RuleResult) -> str:
@@ -63,7 +92,12 @@ def _violation_lines(result: RuleResult) -> list[str]:
     for context_line in result.violation_context:
         lines.append(f"    {context_line}")
     for violation in result.violations:
-        lines.append(f"    - {format_violation(violation)}")
+        location = _violation_location(violation)
+        if location is not None:
+            lines.append(f"    - {location}")
+            lines.append(f"        imports {_extract_target(violation)}")
+        else:
+            lines.append(f"    - {format_violation(violation)}")
     return lines
 
 
@@ -172,7 +206,14 @@ def print_results(results: list[RuleResult], quiet: bool = False) -> None:
                     for context_line in result.violation_context:
                         console.print(f"[yellow]    {context_line}[/yellow]")
                     for violation in result.violations:
-                        console.print(f"[yellow]    - {format_violation(violation)}[/yellow]")
+                        location = _violation_location(violation)
+                        if location is not None:
+                            console.print(f"[yellow]    - {location}[/yellow]")
+                            console.print(
+                                f"[yellow]        imports {_extract_target(violation)}[/yellow]"
+                            )
+                        else:
+                            console.print(f"[yellow]    - {format_violation(violation)}[/yellow]")
                     if result.error is not None:
                         console.print(f"[yellow]    - Rule error: {result.error}[/yellow]")
                 continue
@@ -185,7 +226,12 @@ def print_results(results: list[RuleResult], quiet: bool = False) -> None:
             for context_line in result.violation_context:
                 console.print(f"[red]    {context_line}[/red]")
             for violation in result.violations:
-                console.print(f"[red]    - {format_violation(violation)}[/red]")
+                location = _violation_location(violation)
+                if location is not None:
+                    console.print(f"[red]    - {location}[/red]")
+                    console.print(f"[red]        imports {_extract_target(violation)}[/red]")
+                else:
+                    console.print(f"[red]    - {format_violation(violation)}[/red]")
             if result.error is not None:
                 console.print(f"[red]    - Rule error: {result.error}[/red]")
 

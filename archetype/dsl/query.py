@@ -12,14 +12,36 @@ from archetype.analysis.pattern import find_matching_nodes, validate_pattern
 
 _current_graph: nx.DiGraph | None = None
 _current_root: Path | None = None
+_project_root: Path | None = None
 
 def load_project(project_root: Path, src_root: Path | None = None) -> None:
     """Load a project's import graph into DSL runtime state."""
-    global _current_graph, _current_root
+    global _current_graph, _current_root, _project_root
     resolved_project_root = project_root.resolve()
     analysis_root = src_root.resolve() if src_root is not None else resolved_project_root
     _current_graph = build_import_graph(analysis_root)
     _current_root = analysis_root
+    _project_root = resolved_project_root
+
+
+def _edge_violation_location(
+    graph: nx.DiGraph, source: str, target: str
+) -> tuple[Path, int]:
+    edge_data = graph.get_edge_data(source, target, default={})
+    file_attr = edge_data.get("file")
+    line_attr = edge_data.get("line")
+
+    if file_attr:
+        file_path = Path(str(file_attr))
+    else:
+        file_path = Path("<unknown>")
+
+    try:
+        line = int(line_attr or 0)
+    except (TypeError, ValueError):
+        line = 0
+
+    return file_path, line
 
 
 class ImportQuery:
@@ -53,11 +75,14 @@ class ImportQuery:
         for source in self.matched_nodes:
             for target in self.graph.successors(source):
                 if target in target_nodes:
+                    violation_file, violation_line = _edge_violation_location(
+                        self.graph, source, target
+                    )
                     violations.append(
                         Violation(
                             module=source,
-                            file=Path("<unknown>"),
-                            line=0,
+                            file=violation_file,
+                            line=violation_line,
                             message=(
                                 f"Module '{source}' must not import '{target_pattern}' "
                                 f"(found import to '{target}')."
@@ -97,11 +122,14 @@ class ImportQuery:
         for source in self.matched_nodes:
             for target in self.graph.successors(source):
                 if target not in allowed_nodes:
+                    violation_file, violation_line = _edge_violation_location(
+                        self.graph, source, target
+                    )
                     violations.append(
                         Violation(
                             module=source,
-                            file=Path("<unknown>"),
-                            line=0,
+                            file=violation_file,
+                            line=violation_line,
                             message=f"Module '{source}' imports disallowed module '{target}'.",
                         )
                     )

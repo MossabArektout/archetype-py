@@ -33,3 +33,23 @@ def test_db_module_has_no_outgoing_edges() -> None:
 def test_graph_excludes_stdlib_and_third_party_modules() -> None:
     graph = build_import_graph(_fixture_root())
     assert all(node.split(".", maxsplit=1)[0] == "simple_project" for node in graph.nodes)
+
+
+def test_graph_stores_import_line_number_on_edge() -> None:
+    graph = build_import_graph(_fixture_root())
+
+    edge_data = graph.get_edge_data("simple_project.api", "simple_project.db")
+
+    assert edge_data is not None
+    assert edge_data["line"] == 7
+
+
+def test_graph_stores_absolute_source_file_path_on_edge() -> None:
+    graph = build_import_graph(_fixture_root())
+
+    edge_data = graph.get_edge_data("simple_project.api", "simple_project.db")
+    expected_file = (_fixture_root() / "simple_project" / "api.py").resolve()
+
+    assert edge_data is not None
+    assert Path(edge_data["file"]).is_absolute()
+    assert Path(edge_data["file"]) == expected_file

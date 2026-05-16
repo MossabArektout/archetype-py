@@ -43,11 +43,19 @@ class ModuleBoundaryRule:
             source_in_parent = source in parent_nodes
             target_is_protected = target in protected_nodes
             if not source_in_parent and target_is_protected:
+                edge_data = self.graph.get_edge_data(source, target, default={})
+                file_attr = edge_data.get("file")
+                line_attr = edge_data.get("line")
+                violation_file = Path(str(file_attr)) if file_attr else Path("<unknown>")
+                try:
+                    violation_line = int(line_attr or 0)
+                except (TypeError, ValueError):
+                    violation_line = 0
                 violations.append(
                     Violation(
                         module=source,
-                        file=Path("<unknown>"),
-                        line=0,
+                        file=violation_file,
+                        line=violation_line,
                         message=(
                             f"Boundary violation: outside module '{source}' imports protected "
                             f"module '{target}' (allowed only within '{parent_pattern}')."
