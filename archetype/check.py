@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -16,7 +17,7 @@ from archetype.init import (
     generate_architecture_py,
     write_architecture_py,
 )
-from archetype.reporter import print_results
+from archetype.reporter import format_results_json, print_results
 from archetype.rule import registry
 
 
@@ -46,7 +47,20 @@ def cli() -> None:
     default=False,
     help="Show only failures and warnings, suppress passing and skipped rules.",
 )
-def check(path: Path, group_filter: str | None, quiet: bool) -> None:
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    show_default=True,
+    help="Output format.",
+)
+def check(
+    path: Path,
+    group_filter: str | None,
+    quiet: bool,
+    output_format: str,
+) -> None:
     """Run architecture rules against a Python project."""
     project_path = path.resolve()
     architecture_file = project_path / "architecture.py"
@@ -88,7 +102,10 @@ def check(path: Path, group_filter: str | None, quiet: bool) -> None:
 
     results = registry.run_all(group_filter=group_filter)
     failed = sum(1 for result in results if not result.passed and not result.warned)
-    print_results(results, quiet=quiet)
+    if output_format == "json":
+        click.echo(json.dumps(format_results_json(results), ensure_ascii=False, indent=2))
+    else:
+        print_results(results, quiet=quiet)
     raise SystemExit(0 if failed == 0 else 1)
 
 

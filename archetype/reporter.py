@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import re
 from collections import OrderedDict
 
@@ -135,6 +136,49 @@ def format_results(results: list[RuleResult], quiet: bool = False) -> str:
         f"Summary: {passed} passed, {failed} failed, {warned} warned, {skipped} skipped, {len(results)} total rules."
     )
     return "\n".join(lines)
+
+
+def _result_status(result: RuleResult) -> str:
+    if result.skipped:
+        return "skipped"
+    if getattr(result, "timed_out", False):
+        return "timeout"
+    if result.warned:
+        return "warned"
+    if result.passed:
+        return "passed"
+    return "failed"
+
+
+def format_results_json(results: list[RuleResult]) -> Mapping[str, object]:
+    """Build a JSON-serializable report for rule execution results."""
+    skipped = sum(1 for result in results if result.skipped)
+    warned = sum(1 for result in results if result.warned)
+    passed = sum(1 for result in results if result.passed and not result.skipped)
+    failed = len(results) - passed - warned - skipped
+
+    return {
+        "summary": {
+            "passed": passed,
+            "failed": failed,
+            "warned": warned,
+            "skipped": skipped,
+            "total": len(results),
+        },
+        "rules": [
+            {
+                "name": result.name,
+                "status": _result_status(result),
+                "group": result.group,
+                "since_date": result.since_date,
+                "violations": [
+                    {"module": violation.module, "message": violation.message}
+                    for violation in result.violations
+                ],
+            }
+            for result in results
+        ],
+    }
 
 
 def print_results(results: list[RuleResult], quiet: bool = False) -> None:
