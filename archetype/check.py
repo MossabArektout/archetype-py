@@ -39,7 +39,14 @@ def cli() -> None:
     default=None,
     help="Run only rules in the specified group name (exact match).",
 )
-def check(path: Path, group_filter: str | None) -> None:
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    default=False,
+    help="Show only failures and warnings, suppress passing and skipped rules.",
+)
+def check(path: Path, group_filter: str | None, quiet: bool) -> None:
     """Run architecture rules against a Python project."""
     project_path = path.resolve()
     architecture_file = project_path / "architecture.py"
@@ -81,7 +88,7 @@ def check(path: Path, group_filter: str | None) -> None:
 
     results = registry.run_all(group_filter=group_filter)
     failed = sum(1 for result in results if not result.passed and not result.warned)
-    print_results(results)
+    print_results(results, quiet=quiet)
     raise SystemExit(0 if failed == 0 else 1)
 
 

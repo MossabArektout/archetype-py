@@ -20,6 +20,47 @@ def _make_project_copy(tmp_path: Path) -> Path:
     return project_path
 
 
+def _write_quiet_mode_fixture(project_path: Path) -> None:
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import group, imports, rule, skip, warn",
+                "",
+                "@rule('pass-rule')",
+                "def _pass_rule() -> None:",
+                "    imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+                "@rule('fail-rule')",
+                "def _fail_rule() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+                "@rule('warn-rule')",
+                "@warn",
+                "def _warn_rule() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+                "@rule('skipped-rule')",
+                "@skip(reason='Deferred')",
+                "def _skipped_rule() -> None:",
+                "    raise AssertionError('must never execute')",
+                "",
+                "with group('All pass group'):",
+                "    @rule('group-pass-rule')",
+                "    def _group_pass_rule() -> None:",
+                "        imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+                "with group('Warning group'):",
+                "    @rule('group-warn-rule')",
+                "    @warn",
+                "    def _group_warn_rule() -> None:",
+                "        imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_cli_exits_one_when_architecture_file_missing(tmp_path: Path) -> None:
     project_path = _make_project_copy(tmp_path)
     runner = CliRunner()
@@ -399,3 +440,124 @@ def test_cli_group_flag_with_unknown_group_returns_zero_rules(
 
     assert result.exit_code == 0
     assert "Summary: 0 passed, 0 failed, 0 warned, 0 skipped, 0 total rules." in result.output
+
+
+def test_cli_quiet_flag_is_accepted(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('pass-rule')",
+                "def _pass_rule() -> None:",
+                "    imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert result.exit_code == 0
+    assert "No such option" not in result.output
+
+
+def test_cli_quiet_mode_hides_passing_rules(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert "pass-rule" not in result.output
+    assert "group-pass-rule" not in result.output
+
+
+def test_cli_quiet_mode_shows_failing_rules(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert "✗ fail-rule" in result.output
+
+
+def test_cli_quiet_mode_shows_warned_rules(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert "⚠ warn-rule" in result.output
+    assert "⚠ group-warn-rule" in result.output
+
+
+def test_cli_quiet_mode_hides_skipped_rules(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert "skipped-rule" not in result.output
+
+
+def test_cli_quiet_mode_summary_shows_full_counts(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert (
+        "Summary: 2 passed, 1 failed, 2 warned, 1 skipped, 6 total rules."
+        in result.output
+    )
+
+
+def test_cli_quiet_mode_hides_group_headers_when_all_rules_passed(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert "All pass group" not in result.output
+
+
+def test_cli_quiet_mode_keeps_group_header_with_warning_or_failure(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert "Warning group" in result.output
+
+
+def test_cli_exit_code_is_identical_with_and_without_quiet(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    normal_result = runner.invoke(cli, ["check", str(project_path)])
+    quiet_result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+
+    assert normal_result.exit_code == quiet_result.exit_code
+
+
+def test_cli_quiet_short_flag_matches_long_flag_behavior(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    long_result = runner.invoke(cli, ["check", str(project_path), "--quiet"])
+    short_result = runner.invoke(cli, ["check", str(project_path), "-q"])
+
+    assert long_result.exit_code == short_result.exit_code
+    assert long_result.output == short_result.output
