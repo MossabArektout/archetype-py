@@ -16,8 +16,10 @@ def _fixture_root() -> Path:
 @pytest.fixture(autouse=True)
 def clear_loaded_graph() -> None:
     query_module._current_graph = None
+    query_module._project_root = None
     yield
     query_module._current_graph = None
+    query_module._project_root = None
 
 
 def test_must_not_import_raises_for_direct_api_to_db_dependency() -> None:
@@ -25,6 +27,30 @@ def test_must_not_import_raises_for_direct_api_to_db_dependency() -> None:
 
     with pytest.raises(AssertionError):
         imports("simple_project.api").must_not_import("simple_project.db")
+
+
+def test_must_not_import_violation_includes_non_empty_file_and_line() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError) as excinfo:
+        imports("simple_project.api").must_not_import("simple_project.db")
+
+    violations = getattr(excinfo.value, "violations", [])
+    assert violations
+    assert violations[0].file is not None
+    assert violations[0].line != 0
+
+
+def test_must_not_import_violation_file_points_to_source_module_file() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError) as excinfo:
+        imports("simple_project.api").must_not_import("simple_project.db")
+
+    violations = getattr(excinfo.value, "violations", [])
+    expected_file = (_fixture_root() / "simple_project" / "api.py").resolve()
+    assert violations
+    assert Path(violations[0].file).resolve() == expected_file
 
 
 def test_must_not_import_passes_when_dependency_does_not_exist() -> None:

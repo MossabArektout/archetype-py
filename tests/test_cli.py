@@ -140,9 +140,8 @@ def test_cli_prints_violation_messages_for_failing_rules(tmp_path: Path) -> None
 
     assert result.exit_code == 1
     assert "✗ api-must-not-import-db" in result.output
-    assert "simple_project.api -> simple_project.db" in result.output
-    normalized_output = " ".join(result.output.split())
-    assert "must not import" in normalized_output
+    assert "simple_project/api.py:7" in result.output
+    assert "imports simple_project.db" in result.output
 
 
 def test_cli_shows_allowed_set_once_for_must_only_import_from(tmp_path: Path) -> None:
@@ -169,7 +168,8 @@ def test_cli_shows_allowed_set_once_for_must_only_import_from(tmp_path: Path) ->
     assert result.output.count(
         "Allowed imports for 'simple_project.api': simple_project.services."
     ) == 1
-    assert "simple_project.api -> simple_project.db" in result.output
+    assert "simple_project/api.py:7" in result.output
+    assert "imports simple_project.db" in result.output
     assert "outside the allowed set" not in result.output
 
 
@@ -377,8 +377,8 @@ def test_cli_outputs_since_date_next_to_rule_name(tmp_path: Path) -> None:
 
     result = runner.invoke(cli, ["check", str(project_path)])
 
-    assert result.exit_code == 0
-    assert "✓ api-must-not-import-db (since 2000-01-01)" in result.output
+    assert result.exit_code == 1
+    assert "✗ api-must-not-import-db (since 2000-01-01)" in result.output
 
 
 def test_cli_group_flag_passes_group_filter_to_registry_run_all(

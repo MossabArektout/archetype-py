@@ -44,10 +44,25 @@ def build_import_graph(project_root: Path) -> nx.DiGraph:
         top_level = module_name.split(".", maxsplit=1)[0]
         return (root / top_level).is_dir()
 
-    def add_import_edge(current_module: str, imported_module: str) -> None:
+    def add_import_edge(
+        current_module: str,
+        imported_module: str,
+        *,
+        line: int | None,
+        file_path: Path,
+    ) -> None:
         if imported_module and is_local_module(imported_module):
             graph.add_node(imported_module)
-            graph.add_edge(current_module, imported_module)
+            if graph.has_edge(current_module, imported_module):
+                # Keep first-seen import location if multiple statements import
+                # the same source->target pair.
+                return
+            graph.add_edge(
+                current_module,
+                imported_module,
+                line=line or 0,
+                file=str(file_path.resolve()),
+            )
 
     for file_path in sorted(root.rglob("*.py")):
         current_module = path_to_module(file_path, root)
@@ -62,7 +77,12 @@ def build_import_graph(project_root: Path) -> nx.DiGraph:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    add_import_edge(current_module, alias.name)
+                    add_import_edge(
+                        current_module,
+                        alias.name,
+                        line=getattr(node, "lineno", 0),
+                        file_path=file_path,
+                    )
 
             if isinstance(node, ast.ImportFrom):
                 if node.level and node.level > 0:
@@ -87,11 +107,21 @@ def build_import_graph(project_root: Path) -> nx.DiGraph:
                     candidate = f"{base_module}.{alias.name}" if base_module else alias.name
                     if candidate and is_local_module(candidate):
                         resolved_submodule = True
-                        add_import_edge(current_module, candidate)
+                        add_import_edge(
+                            current_module,
+                            candidate,
+                            line=getattr(node, "lineno", 0),
+                            file_path=file_path,
+                        )
 
                 # Fall back to base module dependency when no concrete local
                 # submodule candidates were found (or for star imports).
                 if not resolved_submodule or any(alias.name == "*" for alias in node.names):
-                    add_import_edge(current_module, base_module)
+                    add_import_edge(
+                        current_module,
+                        base_module,
+                        line=getattr(node, "lineno", 0),
+                        file_path=file_path,
+                    )
 
     return graph
