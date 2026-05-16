@@ -100,6 +100,34 @@ def test_plugin_rule_failure_shows_violation_message(pytester) -> None:
     )
 
 
+def test_plugin_shows_allowed_set_summary_once_for_must_only_import_from(pytester) -> None:
+    _write_simple_project(pytester.path)
+    (pytester.path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-only-services')",
+                "def _rule_api_only_services() -> None:",
+                "    imports('simple_project.api').must_only_import_from('simple_project.services')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = pytester.runpytest_inprocess("-q")
+
+    result.stdout.fnmatch_lines(
+        [
+            "*Rule 'api-only-services' violations:*",
+            "*Allowed imports for 'simple_project.api': simple_project.services.*",
+            "*simple_project.api -> simple_project.db*",
+            "*1 failed*",
+        ]
+    )
+
+
 def test_plugin_nodeid_includes_group_name_when_present(pytester) -> None:
     _write_simple_project(pytester.path)
     (pytester.path / "architecture.py").write_text(

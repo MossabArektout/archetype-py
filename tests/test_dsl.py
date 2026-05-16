@@ -47,8 +47,14 @@ def test_has_no_cycles_raises_when_cycle_exists_and_passes_when_none() -> None:
 def test_must_only_import_from_raises_and_passes_for_valid_edges() -> None:
     load_project(_fixture_root())
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(AssertionError) as excinfo:
         imports("simple_project.api").must_only_import_from("simple_project.services")
+    violations = getattr(excinfo.value, "violations", [])
+    assert violations
+    assert "outside the allowed set" not in violations[0].message
+    assert getattr(excinfo.value, "violation_context", []) == [
+        "Allowed imports for 'simple_project.api': simple_project.services."
+    ]
 
     imports("simple_project.services").must_only_import_from(
         "simple_project.db",

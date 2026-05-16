@@ -11,6 +11,15 @@ from archetype.analysis.models import RuleResult, Violation
 
 
 def _extract_target(violation: Violation) -> str:
+    for pattern in (
+        r"found import to '([^']+)'",
+        r"imports protected module '([^']+)'",
+        r"imports disallowed module '([^']+)'",
+        r"imports '([^']+)'",
+    ):
+        match = re.search(pattern, violation.message)
+        if match:
+            return match.group(1)
     quoted = re.findall(r"'([^']+)'", violation.message)
     if quoted:
         return quoted[-1]
@@ -49,6 +58,15 @@ def _group_failed(results: list[RuleResult]) -> int:
     return sum(1 for result in results if not result.passed and not result.warned)
 
 
+def _violation_lines(result: RuleResult) -> list[str]:
+    lines: list[str] = []
+    for context_line in result.violation_context:
+        lines.append(f"    {context_line}")
+    for violation in result.violations:
+        lines.append(f"    - {format_violation(violation)}")
+    return lines
+
+
 def format_results(results: list[RuleResult]) -> str:
     """Build a complete plain-text report for rule execution results."""
     lines: list[str] = []
@@ -78,13 +96,11 @@ def format_results(results: list[RuleResult]) -> str:
                 symbol = "✓" if result.passed else "✗"
             lines.append(f"  {symbol} {_format_rule_name(result)}")
             if result.warned:
-                for violation in result.violations:
-                    lines.append(f"    - {format_violation(violation)}")
+                lines.extend(_violation_lines(result))
                 if result.error is not None:
                     lines.append(f"    - Rule error: {result.error}")
             elif not result.passed:
-                for violation in result.violations:
-                    lines.append(f"    - {format_violation(violation)}")
+                lines.extend(_violation_lines(result))
                 if result.error is not None:
                     lines.append(f"    - Rule error: {result.error}")
 
@@ -125,6 +141,8 @@ def print_results(results: list[RuleResult]) -> None:
             if result.is_warning:
                 console.print(f"[yellow]  ⚠ {_format_rule_name(result)}[/yellow]")
                 if result.warned:
+                    for context_line in result.violation_context:
+                        console.print(f"[yellow]    {context_line}[/yellow]")
                     for violation in result.violations:
                         console.print(f"[yellow]    - {format_violation(violation)}[/yellow]")
                     if result.error is not None:
@@ -136,6 +154,8 @@ def print_results(results: list[RuleResult]) -> None:
                 continue
 
             console.print(f"[red]  ✗ {_format_rule_name(result)}[/red]")
+            for context_line in result.violation_context:
+                console.print(f"[red]    {context_line}[/red]")
             for violation in result.violations:
                 console.print(f"[red]    - {format_violation(violation)}[/red]")
             if result.error is not None:
