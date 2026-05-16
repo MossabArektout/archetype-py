@@ -43,3 +43,22 @@
 - Summary line now includes warned and skipped counts
 - Reporter output organized by group when rules use group context manager
 - pytest plugin node IDs include group name when present
+
+
+## 0.2.3 — 2026-05-16
+
+### Added
+- archetype init command for scaffolding
+- --quiet flag to show only failures and warnings
+- --format json flag for machine-readable output
+- --no-cache flag to force fresh graph rebuild
+- --group flag to run specific rule groups only
+- must_not_depend_on for transitive dependency checking
+- Import graph caching for faster repeat runs
+- File path and line number in violation messages
+
+### Fixed
+- src layout detection in archetype init
+- Verbose violation messages now concise and scannable
+- --quiet flag correctly filters JSON output
+- Naming convention violation message format cleaned up
