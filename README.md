@@ -227,6 +227,28 @@ Rules are written in `architecture.py` with decorators. Below are all decorator-
 
 Decorator order tip: place `@rule(...)` first, then wrappers like `@warn`, `@skip`, or `@since`.
 
+### `@since` Date Format
+
+`@since(...)` only accepts ISO calendar dates in `YYYY-MM-DD` format. The
+decorator validates this when `architecture.py` is loaded, so invalid values
+raise a clear `ValueError` instead of being ignored.
+
+```python
+@since("2026-01-01")  # valid
+def recent_violations_only() -> None:
+    ...
+
+@since("01-01-2026")  # invalid: expected YYYY-MM-DD
+def ambiguous_date() -> None:
+    ...
+```
+
+Invalid dates show the expectation in the error message:
+
+```text
+Invalid date '01-01-2026'. Expected format: YYYY-MM-DD.
+```
+
 | Command | Description | Example |
 |---|---|---|
 | `archetype init [path]` | Detects project structure and generates a starter `architecture.py` file. | `archetype init .` |
