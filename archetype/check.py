@@ -108,7 +108,9 @@ def check(
         sys.path = original_sys_path
 
     results = registry.run_all(group_filter=group_filter)
-    failed = sum(1 for result in results if not result.passed and not result.warned)
+    failed = sum(
+        1 for result in results if (not result.passed and not result.warned) or result.timed_out
+    )
     if output_format == "json":
         click.echo(json.dumps(format_results_json(results), ensure_ascii=False, indent=2))
     else:
