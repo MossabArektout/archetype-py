@@ -547,6 +547,29 @@ def test_cli_format_json_summary_counts_are_correct(tmp_path: Path) -> None:
     }
 
 
+def test_cli_format_json_quiet_outputs_parseable_json_with_full_summary(
+    tmp_path: Path,
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    _write_quiet_mode_fixture(project_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli, ["check", str(project_path), "--format", "json", "--quiet"]
+    )
+
+    payload = json.loads(result.output)
+    assert payload["summary"] == {
+        "passed": 2,
+        "failed": 1,
+        "warned": 2,
+        "skipped": 1,
+        "total": 6,
+    }
+    assert isinstance(payload["rules"], list)
+    assert len(payload["rules"]) == 6
+
+
 def test_cli_format_text_behavior_is_unchanged(tmp_path: Path) -> None:
     project_path = _make_project_copy(tmp_path)
     _write_quiet_mode_fixture(project_path)
