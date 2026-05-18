@@ -208,3 +208,19 @@ def test_ensure_gitignore_entry_does_not_duplicate_existing_entry(tmp_path: Path
 
     content = gitignore.read_text(encoding="utf-8")
     assert content.count(".archetype_cache") == 1
+
+
+def test_ensure_gitignore_entry_preserves_content_without_duplicate_cache_entry(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    gitignore = project_root / ".gitignore"
+    gitignore.write_text("# local files\nnode_modules/\n", encoding="utf-8")
+
+    ensure_gitignore_entry(project_root)
+    ensure_gitignore_entry(project_root)
+
+    assert gitignore.read_text(encoding="utf-8") == (
+        "# local files\nnode_modules/\n.archetype_cache\n"
+    )
