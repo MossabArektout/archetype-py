@@ -254,6 +254,9 @@ Invalid date '01-01-2026'. Expected format: YYYY-MM-DD.
 | `archetype init [path]` | Detects project structure and generates a starter `architecture.py` file. | `archetype init .` |
 | `archetype check [path]` | Loads `architecture.py` and runs all registered architecture rules. | `archetype check .` |
 | `archetype check [path] --group <name>` | Runs only rules that belong to the specified group. | `archetype check . --group core` |
+| `archetype check [path] --quiet` / `-q` | Shows only failures and warnings, hiding passing and skipped rules. | `archetype check . --quiet` |
+| `archetype check [path] --format json` | Emits machine-readable JSON output for CI logs or custom tooling; `text` remains the default format. | `archetype check . --format json` |
+| `archetype check [path] --no-cache` | Forces a fresh import graph rebuild instead of using a cached graph. | `archetype check . --no-cache` |
 
 
 
