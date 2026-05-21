@@ -840,3 +840,115 @@ def test_cli_quiet_short_flag_matches_long_flag_behavior(tmp_path: Path) -> None
 
     assert long_result.exit_code == short_result.exit_code
     assert long_result.output == short_result.output
+
+
+def test_cli_changed_from_accepts_branch_name_and_scopes_reporting(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    changed_file = (project_path / "simple_project" / "api.py").resolve()
+
+    captured: dict[str, str | None] = {"ref": None}
+
+    def fake_changed_from(ref: str, _root: Path) -> set[Path]:
+        captured["ref"] = ref
+        return {changed_file}
+
+    monkeypatch.setattr("archetype.check.get_files_changed_from", fake_changed_from)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--changed-from", "origin/main"])
+
+    assert result.exit_code == 1
+    assert captured["ref"] == "origin/main"
+    assert "Scope: changed-files mode from 'origin/main' (1 changed Python files)" in result.output
+    assert "✗ api-must-not-import-db" in result.output
+
+
+def test_cli_changed_from_accepts_commit_sha_and_filters_out_of_scope_violations(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    sha = "a1b2c3d4"
+
+    monkeypatch.setattr("archetype.check.get_files_changed_from", lambda *_: set())
+
+    result = runner.invoke(cli, ["check", str(project_path), "--changed-from", sha])
+
+    assert result.exit_code == 0
+    assert f"Scope: changed-files mode from '{sha}' (0 changed Python files)" in result.output
+    assert "✓ api-must-not-import-db" in result.output
+
+
+def test_cli_changed_from_json_includes_scope_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    changed_file = (project_path / "simple_project" / "api.py").resolve()
+    runner = CliRunner()
+
+    monkeypatch.setattr(
+        "archetype.check.get_files_changed_from",
+        lambda *_: {changed_file},
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--changed-from",
+            "origin/main",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["scope"] == {
+        "mode": "changed-files",
+        "changed_from": "origin/main",
+        "changed_files_count": 1,
+        "changed_files": ["simple_project/api.py"],
+    }

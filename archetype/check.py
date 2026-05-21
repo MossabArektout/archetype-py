@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -17,6 +18,7 @@ from archetype.baseline import (
     load_baseline,
     write_baseline,
 )
+from archetype.analysis.git_utils import get_files_changed_from
 from archetype.dsl.query import load_project
 from archetype.init import (
     detect_project_structure,
@@ -24,8 +26,39 @@ from archetype.init import (
     generate_architecture_py,
     write_architecture_py,
 )
+from archetype.analysis.models import RuleResult
 from archetype.reporter import format_results_json, print_results
 from archetype.rule import registry
+
+
+def _scope_results_to_changed_files(
+    results: list[RuleResult],
+    *,
+    changed_files: set[Path],
+    project_root: Path,
+) -> None:
+    resolved_root = project_root.resolve()
+    for result in results:
+        if result.skipped or result.error is not None:
+            continue
+        if not result.violations:
+            continue
+
+        scoped = []
+        for violation in result.violations:
+            violation_file = Path(violation.file)
+            violation_path = (
+                (resolved_root / violation_file).resolve()
+                if not violation_file.is_absolute()
+                else violation_file.resolve()
+            )
+            if violation_path in changed_files:
+                scoped.append(violation)
+
+        result.violations = scoped
+        if not scoped:
+            result.passed = True
+            result.warned = False
 
 
 @click.group()
@@ -81,6 +114,11 @@ def cli() -> None:
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
     help="Load baseline JSON and suppress matching existing violations.",
+    "--changed-from",
+    "changed_from",
+    type=str,
+    default=None,
+    help="Limit reported violations to files changed from the given ref (branch or SHA).",
 )
 def check(
     path: Path,
@@ -90,6 +128,7 @@ def check(
     no_cache: bool,
     write_baseline_path: Path | None,
     baseline_path: Path | None,
+    changed_from: str | None,
 ) -> None:
     """Run architecture rules against a Python project."""
     project_path = path.resolve()
@@ -157,6 +196,30 @@ def check(
             project_root=project_path,
         )
 
+    scope_metadata: dict[str, object] | None = None
+    if changed_from is not None:
+        try:
+            changed_files = get_files_changed_from(changed_from, project_path)
+        except (FileNotFoundError, OSError, subprocess.CalledProcessError) as exc:
+            click.echo(f"Error: unable to run git diff for --changed-from '{changed_from}': {exc}", err=True)
+            raise SystemExit(1) from exc
+
+        _scope_results_to_changed_files(
+            results,
+            changed_files=changed_files,
+            project_root=project_path,
+        )
+        scope_metadata = {
+            "mode": "changed-files",
+            "changed_from": changed_from,
+            "changed_files_count": len(changed_files),
+            "changed_files": sorted(
+                changed_path.relative_to(project_path.resolve()).as_posix()
+                if changed_path.is_relative_to(project_path.resolve())
+                else changed_path.as_posix()
+                for changed_path in changed_files
+            ),
+        }
     if group_filter is not None and not results and output_format == "text":
         click.echo(f"No rules matched group '{group_filter}'.")
     failed = sum(1 for result in results if not result.passed and not result.warned)
@@ -164,11 +227,17 @@ def check(
         click.echo(
             json.dumps(
                 format_results_json(results, violation_counts=violation_counts),
+                format_results_json(results, scope=scope_metadata),
                 ensure_ascii=False,
                 indent=2,
             )
         )
     else:
+        if scope_metadata is not None:
+            click.echo(
+                f"Scope: changed-files mode from '{changed_from}' "
+                f"({scope_metadata['changed_files_count']} changed Python files)"
+            )
         print_results(results, quiet=quiet)
     raise SystemExit(0 if failed == 0 else 1)
 

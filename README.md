@@ -212,6 +212,7 @@ def no_import_cycles() -> None:
 - Temporary rule skips with context
 - Changed-file enforcement (`since`)
 - Legacy baseline snapshot/suppression (`--write-baseline`, `--baseline`)
+- Diff-scoped checks (`--changed-from <ref>`)
 - Pytest integration
 - CI-friendly exit codes
 
@@ -257,6 +258,21 @@ Invalid date '01-01-2026'. Expected format: YYYY-MM-DD.
 | `archetype check [path]` | Loads `architecture.py` and runs all registered architecture rules. | `archetype check .` |
 | `archetype check [path] --group <name>` | Runs only rules that belong to the specified group. | `archetype check . --group core` |
 | `archetype check [path] --write-baseline <file> --baseline <file>` | Writes a baseline snapshot and suppresses matching legacy violations so only new ones fail. | `archetype check . --baseline archetype-baseline.json` |
+| `archetype check [path] --changed-from <ref>` | Limits reported violations to files changed since `<ref>` (branch name or commit SHA). | `archetype check . --changed-from origin/main` |
+
+### Changed-files Mode
+
+Use diff scope to speed up checks in large repositories:
+
+```bash
+archetype check . --changed-from origin/main
+```
+
+`<ref>` can be a branch name (for example `origin/main`) or a commit SHA.
+
+When enabled:
+- Text output shows a scope banner with mode, ref, and changed file count.
+- JSON output includes a `scope` object with mode/ref/file metadata.
 
 ## Baseline Mode
 

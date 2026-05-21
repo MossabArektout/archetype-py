@@ -198,6 +198,8 @@ def _violation_counts(results: list[RuleResult]) -> ViolationCounts:
 
 def format_results_json(
     results: list[RuleResult], *, violation_counts: ViolationCounts | None = None
+def format_results_json(
+    results: list[RuleResult], *, scope: Mapping[str, object] | None = None
 ) -> Mapping[str, object]:
     """Build a JSON-serializable report for rule execution results."""
     skipped = sum(1 for result in results if result.skipped)
@@ -206,7 +208,7 @@ def format_results_json(
     failed = len(results) - passed - warned - skipped
     counts = violation_counts or _violation_counts(results)
 
-    return {
+    payload: dict[str, object] = {
         "summary": {
             "passed": passed,
             "failed": failed,
@@ -233,6 +235,9 @@ def format_results_json(
             for result in results
         ],
     }
+    if scope is not None:
+        payload["scope"] = dict(scope)
+    return payload
 
 
 def print_results(results: list[RuleResult], quiet: bool = False) -> None:

@@ -80,3 +80,22 @@ def get_files_modified_after(date_str: str, project_root: Path) -> set[Path]:
                 modified_files.add(file_path)
 
     return modified_files
+
+
+def get_files_changed_from(ref: str, project_root: Path) -> set[Path]:
+    """Return Python files changed from ref...HEAD."""
+    resolved_root = project_root.resolve()
+    completed = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{ref}...HEAD", "--", "*.py"],
+        cwd=resolved_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    changed_files: set[Path] = set()
+    for line in completed.stdout.splitlines():
+        rel = line.strip()
+        if not rel:
+            continue
+        changed_files.add((resolved_root / rel).resolve())
+    return changed_files
