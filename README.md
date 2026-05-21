@@ -206,6 +206,12 @@ def no_import_cycles() -> None:
 - Import cycle detection
 - Protected module boundaries
 
+### Project Layout Support
+- Flat package layouts
+- Single `src/` layouts
+- Namespace packages (PEP 420, without `__init__.py`)
+- Monorepos with multiple `src` roots
+
 ### Workflow Features
 - Rule grouping
 - Warning-level rules
@@ -351,6 +357,7 @@ When `--baseline` is used, exit code `1` means there are **new** blocking violat
 - Rules seem to do nothing: confirm your rules are decorated with `@rule("...")`; undecorated functions are not registered.
 - `@since(...)` behavior is unexpected: verify the date format is `YYYY-MM-DD` and that your git history is available in the checked path.
 - Import path mismatches: use fully qualified module paths (`myapp.api`, not file paths like `src/api.py`).
+- Namespace package imports not showing up: ensure modules live under discovered package roots (repo root, top-level `src/`, or nested monorepo `*/src` roots).
 
 ---
 

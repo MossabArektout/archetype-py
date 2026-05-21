@@ -5,11 +5,19 @@ from pathlib import Path
 
 import archetype.dsl.query as query_module
 from archetype.analysis.cache import ensure_gitignore_entry, get_cache_path
-from archetype.analysis.imports import build_import_graph
+from archetype.analysis.imports import build_import_graph, discover_package_roots
 
 
 def _fixture_root() -> Path:
     return Path(__file__).parent / "fixtures" / "simple_project"
+
+
+def _namespace_fixture_root() -> Path:
+    return Path(__file__).parent / "fixtures" / "namespace_project"
+
+
+def _monorepo_fixture_root() -> Path:
+    return Path(__file__).parent / "fixtures" / "monorepo_project"
 
 
 def test_graph_contains_expected_module_nodes() -> None:
@@ -56,6 +64,49 @@ def test_graph_stores_absolute_source_file_path_on_edge() -> None:
     assert edge_data is not None
     assert Path(edge_data["file"]).is_absolute()
     assert Path(edge_data["file"]) == expected_file
+
+
+def test_graph_supports_namespace_package_without_init_files() -> None:
+    graph = build_import_graph(_namespace_fixture_root())
+
+    assert "company.payments.api" in graph.nodes
+    assert "company.shared.utils" in graph.nodes
+    assert graph.has_edge("company.payments.api", "company.shared.utils")
+
+
+def test_discover_package_roots_supports_monorepo_nested_src_layout() -> None:
+    roots = discover_package_roots(_monorepo_fixture_root())
+    root_paths = {root.resolve() for root in roots}
+    monorepo_root = _monorepo_fixture_root().resolve()
+
+    assert monorepo_root / "services" / "billing" / "src" in root_paths
+    assert monorepo_root / "libs" / "shared" / "src" in root_paths
+
+
+def test_graph_supports_monorepo_multi_root_package_detection() -> None:
+    graph = build_import_graph(_monorepo_fixture_root())
+
+    assert "acme.billing.api" in graph.nodes
+    assert "acme.shared.utils" in graph.nodes
+    assert graph.has_edge("acme.billing.api", "acme.shared.utils")
+
+
+def test_discover_package_roots_preserves_flat_layout_behavior() -> None:
+    roots = discover_package_roots(_fixture_root())
+
+    assert roots == [_fixture_root().resolve()]
+
+
+def test_discover_package_roots_preserves_src_layout_behavior(tmp_path: Path) -> None:
+    src_pkg = tmp_path / "src" / "myapp"
+    src_pkg.mkdir(parents=True)
+    (src_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (src_pkg / "api.py").write_text("from myapp import services\n", encoding="utf-8")
+    (src_pkg / "services.py").write_text("", encoding="utf-8")
+
+    roots = discover_package_roots(tmp_path)
+
+    assert roots == [(tmp_path / "src").resolve()]
 
 
 def _make_tmp_project(tmp_path: Path) -> Path:
