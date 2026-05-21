@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 
 import networkx as nx
+
+_IGNORED_DIRS = {
+    "__pycache__",
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "venv",
+    "env",
+    ".env",
+    ".tox",
+    "node_modules",
+}
 
 
 def path_to_module(file_path: Path, project_root: Path) -> str:
@@ -35,14 +49,88 @@ def resolve_relative_import(
     return ".".join(base_parts)
 
 
+def _has_python_files(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    for root, dirs, files in os.walk(path):
+        dirs[:] = [directory for directory in dirs if directory not in _IGNORED_DIRS]
+        for filename in files:
+            if filename.endswith(".py"):
+                return True
+    return False
+
+
+def _has_top_level_python_package(project_root: Path) -> bool:
+    for child in project_root.iterdir():
+        if not child.is_dir() or child.name in _IGNORED_DIRS:
+            continue
+        if (child / "__init__.py").is_file():
+            return True
+    return False
+
+
+def discover_package_roots(project_root: Path) -> list[Path]:
+    """Discover candidate package roots for flat, src, and monorepo layouts."""
+    resolved_root = project_root.resolve()
+    discovered: list[Path] = []
+    seen: set[Path] = set()
+
+    def add_candidate(path: Path) -> None:
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        if _has_python_files(resolved):
+            seen.add(resolved)
+            discovered.append(resolved)
+
+    if _has_top_level_python_package(resolved_root):
+        add_candidate(resolved_root)
+
+    top_level_src = resolved_root / "src"
+    if top_level_src.is_dir():
+        add_candidate(top_level_src)
+
+    for path in sorted(resolved_root.rglob("src")):
+        if not path.is_dir():
+            continue
+        if path == top_level_src:
+            continue
+        if any(part in _IGNORED_DIRS for part in path.parts):
+            continue
+        add_candidate(path)
+
+    if discovered:
+        return discovered
+    return [resolved_root]
+
+
 def build_import_graph(project_root: Path) -> nx.DiGraph:
     """Build a directed import graph for local Python modules under project_root."""
     graph = nx.DiGraph()
     root = project_root.resolve()
+    package_roots = discover_package_roots(root)
+    python_files: list[tuple[Path, Path]] = []
+
+    for package_root in package_roots:
+        for file_path in sorted(package_root.rglob("*.py")):
+            if any(part in _IGNORED_DIRS for part in file_path.parts):
+                continue
+            python_files.append((package_root, file_path))
+
+    local_modules: set[str] = set()
+    for package_root, file_path in python_files:
+        module_name = path_to_module(file_path, package_root)
+        if module_name:
+            local_modules.add(module_name)
+
+    local_prefixes: set[str] = set()
+    for module_name in local_modules:
+        parts = module_name.split(".")
+        for index in range(1, len(parts)):
+            local_prefixes.add(".".join(parts[:index]))
 
     def is_local_module(module_name: str) -> bool:
-        top_level = module_name.split(".", maxsplit=1)[0]
-        return (root / top_level).is_dir()
+        return module_name in local_modules or module_name in local_prefixes
 
     def add_import_edge(
         current_module: str,
@@ -64,8 +152,8 @@ def build_import_graph(project_root: Path) -> nx.DiGraph:
                 file=str(file_path.resolve()),
             )
 
-    for file_path in sorted(root.rglob("*.py")):
-        current_module = path_to_module(file_path, root)
+    for package_root, file_path in python_files:
+        current_module = path_to_module(file_path, package_root)
         if not current_module:
             continue
 
