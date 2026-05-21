@@ -114,6 +114,8 @@ def cli() -> None:
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
     help="Load baseline JSON and suppress matching existing violations.",
+)
+@click.option(
     "--changed-from",
     "changed_from",
     type=str,
@@ -226,8 +228,11 @@ def check(
     if output_format == "json":
         click.echo(
             json.dumps(
-                format_results_json(results, violation_counts=violation_counts),
-                format_results_json(results, scope=scope_metadata),
+                format_results_json(
+                    results,
+                    violation_counts=violation_counts,
+                    scope=scope_metadata,
+                ),
                 ensure_ascii=False,
                 indent=2,
             )

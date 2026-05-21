@@ -197,9 +197,10 @@ def _violation_counts(results: list[RuleResult]) -> ViolationCounts:
 
 
 def format_results_json(
-    results: list[RuleResult], *, violation_counts: ViolationCounts | None = None
-def format_results_json(
-    results: list[RuleResult], *, scope: Mapping[str, object] | None = None
+    results: list[RuleResult],
+    *,
+    violation_counts: ViolationCounts | None = None,
+    scope: Mapping[str, object] | None = None,
 ) -> Mapping[str, object]:
     """Build a JSON-serializable report for rule execution results."""
     skipped = sum(1 for result in results if result.skipped)
