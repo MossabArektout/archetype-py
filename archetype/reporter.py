@@ -184,14 +184,16 @@ def _result_status(result: RuleResult) -> str:
     return "failed"
 
 
-def format_results_json(results: list[RuleResult]) -> Mapping[str, object]:
+def format_results_json(
+    results: list[RuleResult], *, scope: Mapping[str, object] | None = None
+) -> Mapping[str, object]:
     """Build a JSON-serializable report for rule execution results."""
     skipped = sum(1 for result in results if result.skipped)
     warned = sum(1 for result in results if result.warned)
     passed = sum(1 for result in results if result.passed and not result.skipped)
     failed = len(results) - passed - warned - skipped
 
-    return {
+    payload: dict[str, object] = {
         "summary": {
             "passed": passed,
             "failed": failed,
@@ -213,6 +215,9 @@ def format_results_json(results: list[RuleResult]) -> Mapping[str, object]:
             for result in results
         ],
     }
+    if scope is not None:
+        payload["scope"] = dict(scope)
+    return payload
 
 
 def print_results(results: list[RuleResult], quiet: bool = False) -> None:
