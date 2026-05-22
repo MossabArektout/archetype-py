@@ -15,11 +15,13 @@ from archetype.analysis.cache import (
 )
 from archetype.analysis.imports import build_import_graph
 from archetype.analysis.models import Violation
+from archetype.analysis.path_filters import normalize_exclude_patterns
 from archetype.analysis.pattern import find_matching_nodes, validate_pattern
 
 _current_graph: nx.DiGraph | None = None
 _current_root: Path | None = None
 _project_root: Path | None = None
+_exclude_patterns: tuple[str, ...] = ()
 
 
 def _not_loaded_project_message() -> str:
@@ -43,27 +45,33 @@ def load_project(
     project_root: Path,
     src_root: Path | None = None,
     no_cache: bool = False,
+    exclude_patterns: tuple[str, ...] | list[str] | None = None,
 ) -> None:
     """Load a project's import graph into DSL runtime state."""
-    global _current_graph, _current_root, _project_root
+    global _current_graph, _current_root, _project_root, _exclude_patterns
     resolved_project_root = project_root.resolve()
     analysis_root = src_root.resolve() if src_root is not None else resolved_project_root
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
 
     if no_cache:
-        graph = build_import_graph(analysis_root)
+        graph = build_import_graph(analysis_root, exclude_patterns=normalized_excludes)
     else:
-        current_signatures = compute_file_signatures(resolved_project_root)
+        current_signatures = compute_file_signatures(
+            resolved_project_root,
+            exclude_patterns=normalized_excludes,
+        )
         cached_graph, cached_signatures = load_cached_graph(resolved_project_root)
         if is_cache_valid(cached_signatures, current_signatures):
             graph = cached_graph
         else:
-            graph = build_import_graph(analysis_root)
+            graph = build_import_graph(analysis_root, exclude_patterns=normalized_excludes)
             save_cached_graph(resolved_project_root, graph, current_signatures)
             ensure_gitignore_entry(resolved_project_root)
 
     _current_graph = graph
     _current_root = analysis_root
     _project_root = resolved_project_root
+    _exclude_patterns = normalized_excludes
 
 
 def _edge_violation_location(

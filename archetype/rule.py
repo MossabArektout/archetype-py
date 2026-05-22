@@ -237,7 +237,11 @@ def since(date_str: str) -> Callable[[RuleFn], RuleFn]:
                 project_root = query_module._current_root
 
                 recent_files = (
-                    get_files_modified_after(date_str, project_root)
+                    get_files_modified_after(
+                        date_str,
+                        project_root,
+                        exclude_patterns=query_module._exclude_patterns,
+                    )
                     if project_root is not None
                     else None
                 )

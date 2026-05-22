@@ -219,6 +219,7 @@ def no_import_cycles() -> None:
 - Changed-file enforcement (`since`)
 - Legacy baseline snapshot/suppression (`--write-baseline`, `--baseline`)
 - Diff-scoped checks (`--changed-from <ref>`)
+- Path exclusions (`--exclude`, `[tool.archetype].exclude`)
 - Pytest integration
 - CI-friendly exit codes
 
@@ -263,8 +264,24 @@ Invalid date '01-01-2026'. Expected format: YYYY-MM-DD.
 | `archetype init [path]` | Detects project structure and generates a starter `architecture.py` file. | `archetype init .` |
 | `archetype check [path]` | Loads `architecture.py` and runs all registered architecture rules. | `archetype check .` |
 | `archetype check [path] --group <name>` | Runs only rules that belong to the specified group. | `archetype check . --group core` |
+| `archetype check [path] --exclude <pattern>` | Excludes paths from analysis and reporting (repeatable). | `archetype check . --exclude /vendor/ --exclude /migrations/` |
 | `archetype check [path] --write-baseline <file> --baseline <file>` | Writes a baseline snapshot and suppresses matching legacy violations so only new ones fail. | `archetype check . --baseline archetype-baseline.json` |
 | `archetype check [path] --changed-from <ref>` | Limits reported violations to files changed since `<ref>` (branch name or commit SHA). | `archetype check . --changed-from origin/main` |
+
+### Excluding Paths
+
+Exclude noisy folders such as generated code, migrations, or vendored dependencies:
+
+```bash
+archetype check . --exclude /vendor/ --exclude /migrations/
+```
+
+You can also define defaults in `pyproject.toml`:
+
+```toml
+[tool.archetype]
+exclude = ["/vendor/", "/migrations/"]
+```
 
 ### Changed-files Mode
 

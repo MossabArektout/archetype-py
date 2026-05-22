@@ -19,6 +19,8 @@ from archetype.baseline import (
     write_baseline,
 )
 from archetype.analysis.git_utils import get_files_changed_from
+from archetype.analysis.path_filters import filter_excluded_paths
+from archetype.config import load_exclude_patterns
 from archetype.dsl.query import load_project
 from archetype.init import (
     detect_project_structure,
@@ -116,6 +118,13 @@ def cli() -> None:
     help="Load baseline JSON and suppress matching existing violations.",
 )
 @click.option(
+    "--exclude",
+    "exclude_patterns",
+    type=str,
+    multiple=True,
+    help="Exclude path pattern from analysis (repeatable). Example: --exclude /vendor/",
+)
+@click.option(
     "--changed-from",
     "changed_from",
     type=str,
@@ -130,6 +139,7 @@ def check(
     no_cache: bool,
     write_baseline_path: Path | None,
     baseline_path: Path | None,
+    exclude_patterns: tuple[str, ...],
     changed_from: str | None,
 ) -> None:
     """Run architecture rules against a Python project."""
@@ -146,7 +156,19 @@ def check(
     registry.clear()
     structure = detect_project_structure(project_path)
     src_root = project_path / "src" if structure.get("layout") == "src" else None
-    load_project(project_path, src_root=src_root, no_cache=no_cache)
+    try:
+        config_excludes = load_exclude_patterns(project_path)
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    merged_excludes = [*config_excludes, *exclude_patterns]
+    load_project(
+        project_path,
+        src_root=src_root,
+        no_cache=no_cache,
+        exclude_patterns=merged_excludes,
+    )
 
     module_name = f"_archetype_user_architecture_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(module_name, architecture_file)
@@ -201,10 +223,19 @@ def check(
     scope_metadata: dict[str, object] | None = None
     if changed_from is not None:
         try:
-            changed_files = get_files_changed_from(changed_from, project_path)
+            changed_files = get_files_changed_from(
+                changed_from,
+                project_path,
+                exclude_patterns=merged_excludes,
+            )
         except (FileNotFoundError, OSError, subprocess.CalledProcessError) as exc:
             click.echo(f"Error: unable to run git diff for --changed-from '{changed_from}': {exc}", err=True)
             raise SystemExit(1) from exc
+        changed_files = filter_excluded_paths(
+            changed_files,
+            project_root=project_path,
+            exclude_patterns=merged_excludes,
+        )
 
         _scope_results_to_changed_files(
             results,

@@ -5,8 +5,11 @@ from __future__ import annotations
 import ast
 import os
 from pathlib import Path
+from typing import Iterable
 
 import networkx as nx
+
+from archetype.analysis.path_filters import is_path_excluded, normalize_exclude_patterns
 
 _IGNORED_DIRS = {
     "__pycache__",
@@ -49,13 +52,27 @@ def resolve_relative_import(
     return ".".join(base_parts)
 
 
-def _has_python_files(path: Path) -> bool:
+def _has_python_files(
+    path: Path,
+    *,
+    project_root: Path,
+    exclude_patterns: Iterable[str] | None = None,
+) -> bool:
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
     if not path.is_dir():
         return False
     for root, dirs, files in os.walk(path):
         dirs[:] = [directory for directory in dirs if directory not in _IGNORED_DIRS]
+        if normalized_excludes and is_path_excluded(
+            Path(root), project_root, normalized_excludes
+        ):
+            continue
         for filename in files:
-            if filename.endswith(".py"):
+            file_path = Path(root) / filename
+            if (
+                filename.endswith(".py")
+                and not is_path_excluded(file_path, project_root, normalized_excludes)
+            ):
                 return True
     return False
 
@@ -69,9 +86,14 @@ def _has_top_level_python_package(project_root: Path) -> bool:
     return False
 
 
-def discover_package_roots(project_root: Path) -> list[Path]:
+def discover_package_roots(
+    project_root: Path,
+    *,
+    exclude_patterns: Iterable[str] | None = None,
+) -> list[Path]:
     """Discover candidate package roots for flat, src, and monorepo layouts."""
     resolved_root = project_root.resolve()
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
     discovered: list[Path] = []
     seen: set[Path] = set()
 
@@ -79,7 +101,11 @@ def discover_package_roots(project_root: Path) -> list[Path]:
         resolved = path.resolve()
         if resolved in seen:
             return
-        if _has_python_files(resolved):
+        if _has_python_files(
+            resolved,
+            project_root=resolved_root,
+            exclude_patterns=normalized_excludes,
+        ):
             seen.add(resolved)
             discovered.append(resolved)
 
@@ -97,6 +123,8 @@ def discover_package_roots(project_root: Path) -> list[Path]:
             continue
         if any(part in _IGNORED_DIRS for part in path.parts):
             continue
+        if is_path_excluded(path, resolved_root, normalized_excludes):
+            continue
         add_candidate(path)
 
     if discovered:
@@ -104,16 +132,23 @@ def discover_package_roots(project_root: Path) -> list[Path]:
     return [resolved_root]
 
 
-def build_import_graph(project_root: Path) -> nx.DiGraph:
+def build_import_graph(
+    project_root: Path,
+    *,
+    exclude_patterns: Iterable[str] | None = None,
+) -> nx.DiGraph:
     """Build a directed import graph for local Python modules under project_root."""
     graph = nx.DiGraph()
     root = project_root.resolve()
-    package_roots = discover_package_roots(root)
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
+    package_roots = discover_package_roots(root, exclude_patterns=normalized_excludes)
     python_files: list[tuple[Path, Path]] = []
 
     for package_root in package_roots:
         for file_path in sorted(package_root.rglob("*.py")):
             if any(part in _IGNORED_DIRS for part in file_path.parts):
+                continue
+            if is_path_excluded(file_path, root, normalized_excludes):
                 continue
             python_files.append((package_root, file_path))
 

@@ -450,15 +450,17 @@ def test_cli_no_cache_flag_passes_no_cache_to_load_project(
     project_path = _make_project_copy(tmp_path)
     (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
 
-    captured: dict[str, bool | None] = {"no_cache": None}
+    captured: dict[str, object | None] = {"no_cache": None, "exclude_patterns": None}
 
     def fake_load_project(
         _project_root: Path,
         src_root: Path | None = None,
         no_cache: bool = False,
+        exclude_patterns=None,
     ) -> None:
         _ = src_root
         captured["no_cache"] = no_cache
+        captured["exclude_patterns"] = exclude_patterns
 
     monkeypatch.setattr("archetype.check.load_project", fake_load_project)
     monkeypatch.setattr("archetype.check.registry.run_all", lambda *, group_filter=None: [])
@@ -468,6 +470,98 @@ def test_cli_no_cache_flag_passes_no_cache_to_load_project(
 
     assert result.exit_code == 0
     assert captured["no_cache"] is True
+    assert captured["exclude_patterns"] == []
+
+
+def test_cli_exclude_flag_is_repeatable_and_passes_patterns_to_load_project(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
+
+    captured: dict[str, object | None] = {"exclude_patterns": None}
+
+    def fake_load_project(
+        _project_root: Path,
+        src_root: Path | None = None,
+        no_cache: bool = False,
+        exclude_patterns=None,
+    ) -> None:
+        _ = src_root
+        _ = no_cache
+        captured["exclude_patterns"] = exclude_patterns
+
+    monkeypatch.setattr("archetype.check.load_project", fake_load_project)
+    monkeypatch.setattr("archetype.check.registry.run_all", lambda *, group_filter=None: [])
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--exclude",
+            "/vendor/",
+            "--exclude",
+            "/migrations/",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["exclude_patterns"] == ["/vendor/", "/migrations/"]
+
+
+def test_cli_exclude_patterns_from_pyproject_are_applied(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    vendor_pkg = project_path / "vendor"
+    vendor_pkg.mkdir(parents=True)
+    (vendor_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (vendor_pkg / "helpers.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    api_module = project_path / "simple_project" / "api.py"
+    api_module.write_text(
+        "\n".join(
+            [
+                "from simple_project import db",
+                "from simple_project import services",
+                "from simple_project.internal import tokens",
+                "from vendor import helpers",
+                "",
+                "def handle() -> None:",
+                "    return None",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-vendor')",
+                "def _rule_api_not_vendor() -> None:",
+                "    imports('simple_project.api').must_not_import('vendor.*')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    without_config = runner.invoke(cli, ["check", str(project_path)])
+    (project_path / "pyproject.toml").write_text(
+        "\n".join(
+            [
+                "[tool.archetype]",
+                'exclude = ["/vendor/"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with_config = runner.invoke(cli, ["check", str(project_path)])
+
+    assert without_config.exit_code == 1
+    assert with_config.exit_code == 0
 
 
 def test_cli_quiet_flag_is_accepted(tmp_path: Path) -> None:
@@ -863,7 +957,13 @@ def test_cli_changed_from_accepts_branch_name_and_scopes_reporting(
 
     captured: dict[str, str | None] = {"ref": None}
 
-    def fake_changed_from(ref: str, _root: Path) -> set[Path]:
+    def fake_changed_from(
+        ref: str,
+        _root: Path,
+        *,
+        exclude_patterns=None,
+    ) -> set[Path]:
+        _ = exclude_patterns
         captured["ref"] = ref
         return {changed_file}
 
@@ -898,7 +998,10 @@ def test_cli_changed_from_accepts_commit_sha_and_filters_out_of_scope_violations
     runner = CliRunner()
     sha = "a1b2c3d4"
 
-    monkeypatch.setattr("archetype.check.get_files_changed_from", lambda *_: set())
+    monkeypatch.setattr(
+        "archetype.check.get_files_changed_from",
+        lambda *_args, **_kwargs: set(),
+    )
 
     result = runner.invoke(cli, ["check", str(project_path), "--changed-from", sha])
 
@@ -929,7 +1032,7 @@ def test_cli_changed_from_json_includes_scope_metadata(
 
     monkeypatch.setattr(
         "archetype.check.get_files_changed_from",
-        lambda *_: {changed_file},
+        lambda *_args, **_kwargs: {changed_file},
     )
 
     result = runner.invoke(
@@ -952,3 +1055,44 @@ def test_cli_changed_from_json_includes_scope_metadata(
         "changed_files_count": 1,
         "changed_files": ["simple_project/api.py"],
     }
+
+
+def test_cli_changed_from_scope_ignores_excluded_paths(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    changed_file = (project_path / "vendor" / "helpers.py").resolve()
+
+    monkeypatch.setattr(
+        "archetype.check.get_files_changed_from",
+        lambda *_args, **_kwargs: {changed_file},
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--changed-from",
+            "origin/main",
+            "--exclude",
+            "/vendor/",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Scope: changed-files mode from 'origin/main' (0 changed Python files)" in result.output

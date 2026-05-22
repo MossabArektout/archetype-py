@@ -55,6 +55,33 @@ def test_graph_stores_import_line_number_on_edge() -> None:
     assert edge_data["line"] == 7
 
 
+def test_graph_excludes_paths_by_directory_pattern(tmp_path: Path) -> None:
+    app_pkg = tmp_path / "app"
+    vendor_pkg = tmp_path / "vendor"
+    migrations_pkg = app_pkg / "migrations"
+    app_pkg.mkdir(parents=True)
+    vendor_pkg.mkdir(parents=True)
+    migrations_pkg.mkdir(parents=True)
+    (app_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (vendor_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (migrations_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (vendor_pkg / "helpers.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (migrations_pkg / "seed.py").write_text("from app import db\n", encoding="utf-8")
+    (app_pkg / "db.py").write_text("", encoding="utf-8")
+    (app_pkg / "api.py").write_text("from vendor import helpers\n", encoding="utf-8")
+
+    included_graph = build_import_graph(tmp_path)
+    excluded_graph = build_import_graph(
+        tmp_path,
+        exclude_patterns=("/vendor/", "/migrations/"),
+    )
+
+    assert "vendor.helpers" in included_graph.nodes
+    assert "app.migrations.seed" in included_graph.nodes
+    assert "vendor.helpers" not in excluded_graph.nodes
+    assert "app.migrations.seed" not in excluded_graph.nodes
+
+
 def test_graph_stores_absolute_source_file_path_on_edge() -> None:
     graph = build_import_graph(_fixture_root())
 
@@ -127,10 +154,10 @@ def test_load_project_uses_cached_graph_when_files_unchanged(
     build_calls = 0
     original = query_module.build_import_graph
 
-    def counting_build(root: Path):
+    def counting_build(root: Path, *, exclude_patterns=None):
         nonlocal build_calls
         build_calls += 1
-        return original(root)
+        return original(root, exclude_patterns=exclude_patterns)
 
     monkeypatch.setattr(query_module, "build_import_graph", counting_build)
 
@@ -148,10 +175,10 @@ def test_load_project_rebuilds_when_file_timestamp_changes(
     build_calls = 0
     original = query_module.build_import_graph
 
-    def counting_build(root: Path):
+    def counting_build(root: Path, *, exclude_patterns=None):
         nonlocal build_calls
         build_calls += 1
-        return original(root)
+        return original(root, exclude_patterns=exclude_patterns)
 
     monkeypatch.setattr(query_module, "build_import_graph", counting_build)
 
@@ -171,10 +198,10 @@ def test_load_project_rebuilds_when_new_python_file_is_added(
     build_calls = 0
     original = query_module.build_import_graph
 
-    def counting_build(root: Path):
+    def counting_build(root: Path, *, exclude_patterns=None):
         nonlocal build_calls
         build_calls += 1
-        return original(root)
+        return original(root, exclude_patterns=exclude_patterns)
 
     monkeypatch.setattr(query_module, "build_import_graph", counting_build)
 
@@ -194,10 +221,10 @@ def test_load_project_ignores_corrupted_cache_and_rebuilds(
     build_calls = 0
     original = query_module.build_import_graph
 
-    def counting_build(root: Path):
+    def counting_build(root: Path, *, exclude_patterns=None):
         nonlocal build_calls
         build_calls += 1
-        return original(root)
+        return original(root, exclude_patterns=exclude_patterns)
 
     monkeypatch.setattr(query_module, "build_import_graph", counting_build)
 
@@ -211,15 +238,35 @@ def test_load_project_no_cache_always_rebuilds(tmp_path: Path, monkeypatch) -> N
     build_calls = 0
     original = query_module.build_import_graph
 
-    def counting_build(root: Path):
+    def counting_build(root: Path, *, exclude_patterns=None):
         nonlocal build_calls
         build_calls += 1
-        return original(root)
+        return original(root, exclude_patterns=exclude_patterns)
 
     monkeypatch.setattr(query_module, "build_import_graph", counting_build)
 
     query_module.load_project(project_root)
     query_module.load_project(project_root, no_cache=True)
+
+    assert build_calls == 2
+
+
+def test_load_project_rebuilds_when_exclusion_patterns_change(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_root = _make_tmp_project(tmp_path)
+    build_calls = 0
+    original = query_module.build_import_graph
+
+    def counting_build(root: Path, *, exclude_patterns=None):
+        nonlocal build_calls
+        build_calls += 1
+        return original(root, exclude_patterns=exclude_patterns)
+
+    monkeypatch.setattr(query_module, "build_import_graph", counting_build)
+
+    query_module.load_project(project_root, exclude_patterns=("/vendor/",))
+    query_module.load_project(project_root, exclude_patterns=("/migrations/",))
 
     assert build_calls == 2
 
