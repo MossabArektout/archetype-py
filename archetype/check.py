@@ -32,7 +32,11 @@ from archetype.init import (
     write_architecture_py,
 )
 from archetype.analysis.models import RuleResult
-from archetype.reporter import format_results_json, print_results
+from archetype.reporter import (
+    format_github_annotations,
+    format_results_json,
+    print_results,
+)
 from archetype.rule import registry
 
 T = TypeVar("T")
@@ -232,6 +236,12 @@ def cli() -> None:
     default=None,
     help="Limit reported violations to files changed from the given ref (branch or SHA).",
 )
+@click.option(
+    "--github-annotations",
+    is_flag=True,
+    default=False,
+    help="Emit GitHub Actions inline PR annotations for violations.",
+)
 @click.pass_context
 def check(
     ctx: click.Context,
@@ -245,6 +255,7 @@ def check(
     exclude_patterns: tuple[str, ...],
     workers: int | None,
     changed_from: str | None,
+    github_annotations: bool,
 ) -> None:
     """Run architecture rules against a Python project."""
     project_path = path.resolve()
@@ -405,6 +416,10 @@ def check(
                 f"({scope_metadata['changed_files_count']} changed Python files)"
             )
         print_results(results, quiet=bool(effective_quiet))
+
+    if github_annotations:
+        for annotation in format_github_annotations(results, project_root=project_path):
+            click.echo(annotation, err=True)
     raise SystemExit(0 if failed == 0 else 1)
 
 

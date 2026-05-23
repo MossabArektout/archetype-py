@@ -1380,3 +1380,31 @@ def test_cli_install_hook_errors_when_git_paths_cannot_be_resolved(
 
     assert result.exit_code == 1
     assert "not a git repository" in result.output
+
+
+def test_cli_github_annotations_flag_emits_github_error_commands(
+    tmp_path: Path,
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        ["check", str(project_path), "--github-annotations"],
+    )
+
+    assert result.exit_code == 1
+    assert "::error file=simple_project/api.py,line=7,title=archetype%3A api-must-not-import-db::" in result.output
