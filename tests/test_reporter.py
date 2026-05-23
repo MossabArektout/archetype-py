@@ -9,6 +9,7 @@ import pytest
 from archetype.analysis.models import RuleResult, Violation
 from archetype.reporter import (
     JSON_SCHEMA_VERSION,
+    format_github_annotations,
     format_results,
     format_results_json,
     print_results,
@@ -197,3 +198,46 @@ def test_format_results_json_contract_shape_is_stable() -> None:
             },
         ],
     }
+
+
+def test_format_github_annotations_emits_error_and_warning_commands() -> None:
+    violation = Violation(
+        module="simple_project.api",
+        file=Path("simple_project/api.py"),
+        line=17,
+        message="Module 'simple_project.api' must not import 'simple_project.db'",
+    )
+    results = [
+        RuleResult(name="failing-rule", passed=False, violations=[violation]),
+        RuleResult(
+            name="warn-rule",
+            passed=False,
+            violations=[violation],
+            warned=True,
+            is_warning=True,
+        ),
+    ]
+
+    annotations = format_github_annotations(results, project_root=Path.cwd())
+
+    assert annotations[0].startswith(
+        "::error file=simple_project/api.py,line=17,title=archetype%3A failing-rule::"
+    )
+    assert annotations[1].startswith(
+        "::warning file=simple_project/api.py,line=17,title=archetype%3A warn-rule::"
+    )
+
+
+def test_format_github_annotations_escapes_reserved_characters() -> None:
+    violation = Violation(
+        module="simple_project.api",
+        file=Path("simple_project/api.py"),
+        line=3,
+        message="invalid: one,two%three\nnext line",
+    )
+    result = RuleResult(name="rule:core,imports", passed=False, violations=[violation])
+
+    annotations = format_github_annotations([result], project_root=Path.cwd())
+
+    assert "title=archetype%3A rule%3Acore%2Cimports" in annotations[0]
+    assert "::rule:core,imports: invalid: one,two%25three%0Anext line" in annotations[0]

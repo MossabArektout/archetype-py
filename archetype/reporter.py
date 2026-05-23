@@ -244,6 +244,58 @@ def format_results_json(
     return payload
 
 
+def _github_escape_data(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _github_escape_property(value: str) -> str:
+    escaped = _github_escape_data(value)
+    return escaped.replace(":", "%3A").replace(",", "%2C")
+
+
+def format_github_annotations(
+    results: list[RuleResult],
+    *,
+    project_root: Path,
+) -> list[str]:
+    """Build GitHub Actions workflow annotation commands for rule violations."""
+    annotations: list[str] = []
+    resolved_root = project_root.resolve()
+
+    for result in results:
+        if result.skipped or result.passed:
+            continue
+        if not result.violations and result.error is None:
+            continue
+
+        level = "warning" if result.warned else "error"
+        title = _github_escape_property(f"archetype: {result.name}")
+
+        if result.error is not None and not result.violations:
+            message = _github_escape_data(f"{result.name}: Rule error: {result.error}")
+            annotations.append(f"::{level} title={title}::{message}")
+            continue
+
+        for violation in result.violations:
+            file_value = str(violation.file)
+            file_path = Path(file_value)
+            if file_path.is_absolute():
+                try:
+                    file_path = file_path.resolve().relative_to(resolved_root)
+                except ValueError:
+                    file_path = file_path.resolve()
+            line = violation.line if violation.line > 0 else 1
+            file_prop = _github_escape_property(file_path.as_posix())
+            message = _github_escape_data(
+                f"{result.name}: {violation.message}"
+            )
+            annotations.append(
+                f"::{level} file={file_prop},line={line},title={title}::{message}"
+            )
+
+    return annotations
+
+
 def print_results(results: list[RuleResult], quiet: bool = False) -> None:
     """Print rule results using rich colors for pass/fail states."""
     console = Console()
