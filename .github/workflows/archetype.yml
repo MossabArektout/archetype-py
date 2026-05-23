@@ -28,9 +28,10 @@ jobs:
           pip install archetype-py
 
       # Run architecture rules defined in architecture.py.
+      # Emit inline GitHub PR annotations for file/line violations.
       # This step exits non-zero on violations, which fails the workflow.
       - name: Run architecture checks
-        run: archetype check .
+        run: archetype check . --github-annotations
 
       # If your team already runs pytest in CI, you can skip this workflow file.
       # Archetype's pytest plugin runs architecture.py rules automatically during pytest.

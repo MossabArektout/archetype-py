@@ -268,6 +268,7 @@ Invalid date '01-01-2026'. Expected format: YYYY-MM-DD.
 | `archetype check [path] --exclude <pattern>` | Excludes paths from analysis and reporting (repeatable). | `archetype check . --exclude /vendor/ --exclude /migrations/` |
 | `archetype check [path] --write-baseline <file> --baseline <file>` | Writes a baseline snapshot and suppresses matching legacy violations so only new ones fail. | `archetype check . --baseline archetype-baseline.json` |
 | `archetype check [path] --changed-from <ref>` | Limits reported violations to files changed since `<ref>` (branch name or commit SHA). | `archetype check . --changed-from origin/main` |
+| `archetype check [path] --github-annotations` | Emits GitHub Actions inline annotations (`::error`/`::warning`) for PR diffs. | `archetype check . --github-annotations` |
 | `archetype install-hook [path]` | Installs (or updates) a managed git pre-commit hook that runs `archetype check` before each commit. | `archetype install-hook .` |
 
 ### Excluding Paths
@@ -346,6 +347,17 @@ archetype check . --changed-from origin/main
 When enabled:
 - Text output shows a scope banner with mode, ref, and changed file count.
 - JSON output includes a `scope` object with mode/ref/file metadata.
+
+### GitHub PR Annotations
+
+Use GitHub Actions annotations to surface violations directly on PR diff lines:
+
+```bash
+archetype check . --github-annotations
+```
+
+In GitHub Actions, these appear as inline file/line annotations for each violation
+while preserving the normal non-zero exit code when checks fail.
 
 ## Baseline Mode
 
