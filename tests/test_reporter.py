@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from archetype.analysis.models import RuleResult, Violation
-from archetype.reporter import format_results, print_results
+from archetype.reporter import (
+    JSON_SCHEMA_VERSION,
+    format_results,
+    format_results_json,
+    print_results,
+)
 
 
 def _violation() -> Violation:
@@ -134,3 +139,61 @@ def test_reporter_default_mode_still_shows_passing_and_skipped(
 
     assert "pass-rule" in output
     assert "skipped-rule" in output
+
+
+def test_format_results_json_includes_schema_version() -> None:
+    payload = format_results_json(_results_fixture())
+
+    assert payload["schema_version"] == JSON_SCHEMA_VERSION
+
+
+def test_format_results_json_contract_shape_is_stable() -> None:
+    results = [
+        RuleResult(name="pass-rule", passed=True),
+        RuleResult(
+            name="fail-rule",
+            passed=False,
+            group="core",
+            since_date="2026-01-01",
+            violations=[_violation()],
+        ),
+    ]
+
+    payload = format_results_json(results)
+
+    assert payload == {
+        "schema_version": JSON_SCHEMA_VERSION,
+        "summary": {
+            "passed": 1,
+            "failed": 1,
+            "warned": 0,
+            "skipped": 0,
+            "total": 2,
+        },
+        "violations": {
+            "total": 1,
+            "new": 1,
+            "suppressed": 0,
+        },
+        "rules": [
+            {
+                "name": "pass-rule",
+                "status": "passed",
+                "group": None,
+                "since_date": None,
+                "violations": [],
+            },
+            {
+                "name": "fail-rule",
+                "status": "failed",
+                "group": "core",
+                "since_date": "2026-01-01",
+                "violations": [
+                    {
+                        "module": "simple_project.api",
+                        "message": "Module 'simple_project.api' must not import 'simple_project.db'",
+                    }
+                ],
+            },
+        ],
+    }

@@ -12,6 +12,8 @@ from rich.console import Console
 from archetype.baseline import ViolationCounts
 from archetype.analysis.models import RuleResult, Violation
 
+JSON_SCHEMA_VERSION = 1
+
 
 def _extract_target(violation: Violation) -> str:
     for pattern in (
@@ -210,6 +212,7 @@ def format_results_json(
     counts = violation_counts or _violation_counts(results)
 
     payload: dict[str, object] = {
+        "schema_version": JSON_SCHEMA_VERSION,
         "summary": {
             "passed": passed,
             "failed": failed,

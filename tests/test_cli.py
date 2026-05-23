@@ -609,6 +609,7 @@ def test_cli_format_flag_is_accepted(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "No such option" not in result.output
     payload = json.loads(result.output)
+    assert payload["schema_version"] == 1
     assert payload["summary"]["total"] == 1
 
 
@@ -621,6 +622,7 @@ def test_cli_format_json_outputs_parseable_json(tmp_path: Path) -> None:
 
     payload = json.loads(result.output)
     assert isinstance(payload, dict)
+    assert payload["schema_version"] == 1
     assert "summary" in payload
     assert "violations" in payload
     assert "rules" in payload

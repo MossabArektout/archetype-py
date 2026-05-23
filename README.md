@@ -320,10 +320,67 @@ archetype check . --baseline archetype-baseline.json --format json
 ```
 
 JSON output includes:
+- `schema_version`: top-level contract version for machine consumers
 - `summary`: rule-level pass/fail/warn/skip counts
 - `violations.total`: total current violations before suppression
 - `violations.new`: violations not found in the baseline
 - `violations.suppressed`: violations matched and suppressed by baseline
+
+### JSON Contract (Versioned)
+
+Archetype JSON output is versioned for CI and other integrations.
+
+Current contract version:
+
+- `schema_version: 1`
+
+Versioning policy:
+
+- Non-breaking additions (for example new optional fields) keep the same `schema_version`.
+- Breaking shape changes (rename/remove/type changes) must increment `schema_version`.
+- Contract tests in CI enforce the current schema shape.
+
+Field definitions:
+
+- `schema_version` (`int`): machine-readable contract version.
+- `summary` (`object`): counts by rule status.
+- `violations` (`object`): aggregate violation counts.
+- `rules` (`array`): per-rule results with status and violations.
+- `scope` (`object`, optional): present when `--changed-from` is used.
+
+Example (`--format json`):
+
+```json
+{
+  "schema_version": 1,
+  "summary": {
+    "passed": 2,
+    "failed": 1,
+    "warned": 0,
+    "skipped": 0,
+    "total": 3
+  },
+  "violations": {
+    "total": 1,
+    "new": 1,
+    "suppressed": 0
+  },
+  "rules": [
+    {
+      "name": "api-must-not-import-db",
+      "status": "failed",
+      "group": "core",
+      "since_date": null,
+      "violations": [
+        {
+          "module": "simple_project.api",
+          "message": "Module 'simple_project.api' must not import 'simple_project.db'"
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## Perfect For
 
