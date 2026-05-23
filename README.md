@@ -219,7 +219,8 @@ def no_import_cycles() -> None:
 - Changed-file enforcement (`since`)
 - Legacy baseline snapshot/suppression (`--write-baseline`, `--baseline`)
 - Diff-scoped checks (`--changed-from <ref>`)
-- Path exclusions (`--exclude`, `[tool.archetype].exclude`)
+- First-class project config defaults (`archetype.toml`)
+- Path exclusions (`--exclude`, `archetype.toml`, legacy `[tool.archetype].exclude`)
 - Pytest integration
 - CI-friendly exit codes
 
@@ -276,12 +277,45 @@ Exclude noisy folders such as generated code, migrations, or vendored dependenci
 archetype check . --exclude /vendor/ --exclude /migrations/
 ```
 
-You can also define defaults in `pyproject.toml`:
+You can also define defaults in `archetype.toml`:
 
 ```toml
-[tool.archetype]
 exclude = ["/vendor/", "/migrations/"]
 ```
+
+Legacy compatibility: if `archetype.toml` is missing, Archetype still reads
+`[tool.archetype]` from `pyproject.toml`.
+
+### Project Config (`archetype.toml`)
+
+Archetype auto-discovers `archetype.toml` in the project root passed to
+`archetype check [path]`.
+
+Supported defaults:
+
+- `format` (`"text"` or `"json"`)
+- `quiet` (`true`/`false`)
+- `group` (`string`)
+- `exclude` (`string` or `string[]`)
+- `workers` (`int >= 1`)
+- `cache` (`true`/`false`)
+
+Example:
+
+```toml
+format = "json"
+quiet = true
+group = "Layer boundaries"
+exclude = ["/vendor/", "/migrations/"]
+workers = 4
+cache = true
+```
+
+Precedence:
+
+- CLI flags override `archetype.toml`.
+- `archetype.toml` overrides built-in defaults.
+- If config is missing, behavior remains unchanged.
 
 ### Changed-files Mode
 

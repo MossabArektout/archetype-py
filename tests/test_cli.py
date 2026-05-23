@@ -400,10 +400,11 @@ def test_cli_group_flag_passes_group_filter_to_registry_run_all(
         encoding="utf-8",
     )
 
-    captured: dict[str, str | None] = {"group_filter": None}
+    captured: dict[str, str | int | None] = {"group_filter": None, "workers": None}
 
-    def fake_run_all(*, group_filter: str | None = None):
+    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
         captured["group_filter"] = group_filter
+        captured["workers"] = workers
         return []
 
     monkeypatch.setattr("archetype.check.registry.run_all", fake_run_all)
@@ -415,6 +416,7 @@ def test_cli_group_flag_passes_group_filter_to_registry_run_all(
 
     assert result.exit_code == 0
     assert captured["group_filter"] == "Layer boundaries"
+    assert captured["workers"] == 1
 
 
 def test_cli_group_flag_with_unknown_group_returns_zero_rules(
@@ -463,7 +465,10 @@ def test_cli_no_cache_flag_passes_no_cache_to_load_project(
         captured["exclude_patterns"] = exclude_patterns
 
     monkeypatch.setattr("archetype.check.load_project", fake_load_project)
-    monkeypatch.setattr("archetype.check.registry.run_all", lambda *, group_filter=None: [])
+    monkeypatch.setattr(
+        "archetype.check.registry.run_all",
+        lambda *, group_filter=None, workers=1: [],
+    )
     runner = CliRunner()
 
     result = runner.invoke(cli, ["check", str(project_path), "--no-cache"])
@@ -492,7 +497,10 @@ def test_cli_exclude_flag_is_repeatable_and_passes_patterns_to_load_project(
         captured["exclude_patterns"] = exclude_patterns
 
     monkeypatch.setattr("archetype.check.load_project", fake_load_project)
-    monkeypatch.setattr("archetype.check.registry.run_all", lambda *, group_filter=None: [])
+    monkeypatch.setattr(
+        "archetype.check.registry.run_all",
+        lambda *, group_filter=None, workers=1: [],
+    )
     runner = CliRunner()
 
     result = runner.invoke(
@@ -562,6 +570,179 @@ def test_cli_exclude_patterns_from_pyproject_are_applied(tmp_path: Path) -> None
 
     assert without_config.exit_code == 1
     assert with_config.exit_code == 0
+
+
+def test_cli_exclude_patterns_from_archetype_toml_are_applied(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    vendor_pkg = project_path / "vendor"
+    vendor_pkg.mkdir(parents=True)
+    (vendor_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (vendor_pkg / "helpers.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    (project_path / "simple_project" / "api.py").write_text(
+        "\n".join(
+            [
+                "from vendor import helpers",
+                "",
+                "def handle() -> None:",
+                "    return None",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-vendor')",
+                "def _rule_api_not_vendor() -> None:",
+                "    imports('simple_project.api').must_not_import('vendor.*')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project_path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                'exclude = ["/vendor/"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+
+
+def test_cli_defaults_from_archetype_toml_are_applied(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
+    (project_path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                'format = "json"',
+                "quiet = true",
+                'group = "core"',
+                'exclude = ["/vendor/"]',
+                "workers = 3",
+                "cache = false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object | None] = {
+        "group_filter": None,
+        "workers": None,
+        "no_cache": None,
+        "exclude_patterns": None,
+    }
+
+    def fake_load_project(
+        _project_root: Path,
+        src_root: Path | None = None,
+        no_cache: bool = False,
+        exclude_patterns=None,
+    ) -> None:
+        _ = src_root
+        captured["no_cache"] = no_cache
+        captured["exclude_patterns"] = exclude_patterns
+
+    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
+        captured["group_filter"] = group_filter
+        captured["workers"] = workers
+        return []
+
+    monkeypatch.setattr("archetype.check.load_project", fake_load_project)
+    monkeypatch.setattr("archetype.check.registry.run_all", fake_run_all)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["total"] == 0
+    assert captured["group_filter"] == "core"
+    assert captured["workers"] == 3
+    assert captured["no_cache"] is True
+    assert captured["exclude_patterns"] == ["/vendor/"]
+
+
+def test_cli_flags_override_archetype_toml_defaults(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
+    (project_path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                'format = "json"',
+                "quiet = true",
+                'group = "core"',
+                'exclude = ["/vendor/"]',
+                "workers = 5",
+                "cache = false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object | None] = {
+        "group_filter": None,
+        "workers": None,
+        "no_cache": None,
+        "exclude_patterns": None,
+    }
+
+    def fake_load_project(
+        _project_root: Path,
+        src_root: Path | None = None,
+        no_cache: bool = False,
+        exclude_patterns=None,
+    ) -> None:
+        _ = src_root
+        captured["no_cache"] = no_cache
+        captured["exclude_patterns"] = exclude_patterns
+
+    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
+        captured["group_filter"] = group_filter
+        captured["workers"] = workers
+        return []
+
+    monkeypatch.setattr("archetype.check.load_project", fake_load_project)
+    monkeypatch.setattr("archetype.check.registry.run_all", fake_run_all)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--format",
+            "text",
+            "--no-quiet",
+            "--group",
+            "override-group",
+            "--exclude",
+            "/migrations/",
+            "--workers",
+            "2",
+            "--cache",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Summary: 0 passed, 0 failed, 0 warned, 0 skipped, 0 total rules." in result.output
+    assert captured["group_filter"] == "override-group"
+    assert captured["workers"] == 2
+    assert captured["no_cache"] is False
+    assert captured["exclude_patterns"] == ["/migrations/"]
 
 
 def test_cli_quiet_flag_is_accepted(tmp_path: Path) -> None:

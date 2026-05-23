@@ -8,8 +8,10 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from typing import TypeVar
 
 import click
+from click.core import ParameterSource
 
 from archetype.baseline import (
     ViolationCounts,
@@ -20,7 +22,7 @@ from archetype.baseline import (
 )
 from archetype.analysis.git_utils import get_files_changed_from
 from archetype.analysis.path_filters import filter_excluded_paths
-from archetype.config import load_exclude_patterns
+from archetype.config import load_check_config
 from archetype.dsl.query import load_project
 from archetype.init import (
     detect_project_structure,
@@ -31,6 +33,8 @@ from archetype.init import (
 from archetype.analysis.models import RuleResult
 from archetype.reporter import format_results_json, print_results
 from archetype.rule import registry
+
+T = TypeVar("T")
 
 
 def _scope_results_to_changed_files(
@@ -85,9 +89,17 @@ def cli() -> None:
 @click.option(
     "--quiet",
     "-q",
-    is_flag=True,
-    default=False,
+    "quiet",
+    flag_value=True,
+    default=None,
     help="Show only failures and warnings, suppress passing and skipped rules.",
+)
+@click.option(
+    "--no-quiet",
+    "quiet",
+    flag_value=False,
+    default=None,
+    help="Show full output including passing and skipped rules.",
 )
 @click.option(
     "--format",
@@ -98,9 +110,17 @@ def cli() -> None:
     help="Output format.",
 )
 @click.option(
+    "--cache",
+    "cache",
+    flag_value=True,
+    default=None,
+    help="Use import graph cache.",
+)
+@click.option(
     "--no-cache",
-    is_flag=True,
-    default=False,
+    "cache",
+    flag_value=False,
+    default=None,
     help="Force a fresh import graph rebuild and ignore any cached graph.",
 )
 @click.option(
@@ -125,21 +145,30 @@ def cli() -> None:
     help="Exclude path pattern from analysis (repeatable). Example: --exclude /vendor/",
 )
 @click.option(
+    "--workers",
+    type=click.IntRange(1),
+    default=None,
+    help="Number of worker threads for running rules.",
+)
+@click.option(
     "--changed-from",
     "changed_from",
     type=str,
     default=None,
     help="Limit reported violations to files changed from the given ref (branch or SHA).",
 )
+@click.pass_context
 def check(
+    ctx: click.Context,
     path: Path,
     group_filter: str | None,
-    quiet: bool,
+    quiet: bool | None,
     output_format: str,
-    no_cache: bool,
+    cache: bool | None,
     write_baseline_path: Path | None,
     baseline_path: Path | None,
     exclude_patterns: tuple[str, ...],
+    workers: int | None,
     changed_from: str | None,
 ) -> None:
     """Run architecture rules against a Python project."""
@@ -157,17 +186,40 @@ def check(
     structure = detect_project_structure(project_path)
     src_root = project_path / "src" if structure.get("layout") == "src" else None
     try:
-        config_excludes = load_exclude_patterns(project_path)
+        config = load_check_config(project_path)
     except ValueError as exc:
         click.echo(f"Error: {exc}", err=True)
         raise SystemExit(1) from exc
 
-    merged_excludes = [*config_excludes, *exclude_patterns]
+    def _resolved_value(name: str, cli_value: T, config_value: T | None) -> T:
+        if (
+            ctx.get_parameter_source(name) == ParameterSource.DEFAULT
+            and config_value is not None
+        ):
+            return config_value
+        return cli_value
+
+    effective_output_format = _resolved_value("output_format", output_format, config.output_format)
+    effective_quiet = _resolved_value("quiet", quiet, config.quiet)
+    effective_group_filter = _resolved_value("group_filter", group_filter, config.group_filter)
+    effective_cache = _resolved_value("cache", cache, config.cache)
+    effective_workers = _resolved_value("workers", workers, config.workers)
+
+    effective_excludes: list[str]
+    if (
+        ctx.get_parameter_source("exclude_patterns") == ParameterSource.DEFAULT
+        and config.exclude_patterns is not None
+    ):
+        effective_excludes = list(config.exclude_patterns)
+    else:
+        effective_excludes = list(exclude_patterns)
+
+    use_cache = True if effective_cache is None else effective_cache
     load_project(
         project_path,
         src_root=src_root,
-        no_cache=no_cache,
-        exclude_patterns=merged_excludes,
+        no_cache=not use_cache,
+        exclude_patterns=effective_excludes,
     )
 
     module_name = f"_archetype_user_architecture_{uuid.uuid4().hex}"
@@ -193,7 +245,10 @@ def check(
     finally:
         sys.path = original_sys_path
 
-    results = registry.run_all(group_filter=group_filter)
+    results = registry.run_all(
+        group_filter=effective_group_filter,
+        workers=effective_workers or 1,
+    )
     violation_counts = ViolationCounts(
         total=sum(len(result.violations) for result in results),
         new=sum(len(result.violations) for result in results),
@@ -226,7 +281,7 @@ def check(
             changed_files = get_files_changed_from(
                 changed_from,
                 project_path,
-                exclude_patterns=merged_excludes,
+                exclude_patterns=effective_excludes,
             )
         except (FileNotFoundError, OSError, subprocess.CalledProcessError) as exc:
             click.echo(f"Error: unable to run git diff for --changed-from '{changed_from}': {exc}", err=True)
@@ -234,7 +289,7 @@ def check(
         changed_files = filter_excluded_paths(
             changed_files,
             project_root=project_path,
-            exclude_patterns=merged_excludes,
+            exclude_patterns=effective_excludes,
         )
 
         _scope_results_to_changed_files(
@@ -253,10 +308,10 @@ def check(
                 for changed_path in changed_files
             ),
         }
-    if group_filter is not None and not results and output_format == "text":
-        click.echo(f"No rules matched group '{group_filter}'.")
+    if effective_group_filter is not None and not results and effective_output_format == "text":
+        click.echo(f"No rules matched group '{effective_group_filter}'.")
     failed = sum(1 for result in results if not result.passed and not result.warned)
-    if output_format == "json":
+    if effective_output_format == "json":
         click.echo(
             json.dumps(
                 format_results_json(
@@ -274,7 +329,7 @@ def check(
                 f"Scope: changed-files mode from '{changed_from}' "
                 f"({scope_metadata['changed_files_count']} changed Python files)"
             )
-        print_results(results, quiet=quiet)
+        print_results(results, quiet=bool(effective_quiet))
     raise SystemExit(0 if failed == 0 else 1)
 
 
