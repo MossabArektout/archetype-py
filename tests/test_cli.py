@@ -400,10 +400,11 @@ def test_cli_group_flag_passes_group_filter_to_registry_run_all(
         encoding="utf-8",
     )
 
-    captured: dict[str, str | None] = {"group_filter": None}
+    captured: dict[str, str | int | None] = {"group_filter": None, "workers": None}
 
-    def fake_run_all(*, group_filter: str | None = None):
+    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
         captured["group_filter"] = group_filter
+        captured["workers"] = workers
         return []
 
     monkeypatch.setattr("archetype.check.registry.run_all", fake_run_all)
@@ -415,6 +416,7 @@ def test_cli_group_flag_passes_group_filter_to_registry_run_all(
 
     assert result.exit_code == 0
     assert captured["group_filter"] == "Layer boundaries"
+    assert captured["workers"] == 1
 
 
 def test_cli_group_flag_with_unknown_group_returns_zero_rules(
@@ -440,6 +442,7 @@ def test_cli_group_flag_with_unknown_group_returns_zero_rules(
     result = runner.invoke(cli, ["check", str(project_path), "--group", "No such group"])
 
     assert result.exit_code == 0
+    assert "No rules matched group 'No such group'." in result.output
     assert "Summary: 0 passed, 0 failed, 0 warned, 0 skipped, 0 total rules." in result.output
 
 
@@ -449,24 +452,297 @@ def test_cli_no_cache_flag_passes_no_cache_to_load_project(
     project_path = _make_project_copy(tmp_path)
     (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
 
-    captured: dict[str, bool | None] = {"no_cache": None}
+    captured: dict[str, object | None] = {"no_cache": None, "exclude_patterns": None}
 
     def fake_load_project(
         _project_root: Path,
         src_root: Path | None = None,
         no_cache: bool = False,
+        exclude_patterns=None,
     ) -> None:
         _ = src_root
         captured["no_cache"] = no_cache
+        captured["exclude_patterns"] = exclude_patterns
 
     monkeypatch.setattr("archetype.check.load_project", fake_load_project)
-    monkeypatch.setattr("archetype.check.registry.run_all", lambda *, group_filter=None: [])
+    monkeypatch.setattr(
+        "archetype.check.registry.run_all",
+        lambda *, group_filter=None, workers=1: [],
+    )
     runner = CliRunner()
 
     result = runner.invoke(cli, ["check", str(project_path), "--no-cache"])
 
     assert result.exit_code == 0
     assert captured["no_cache"] is True
+    assert captured["exclude_patterns"] == []
+
+
+def test_cli_exclude_flag_is_repeatable_and_passes_patterns_to_load_project(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
+
+    captured: dict[str, object | None] = {"exclude_patterns": None}
+
+    def fake_load_project(
+        _project_root: Path,
+        src_root: Path | None = None,
+        no_cache: bool = False,
+        exclude_patterns=None,
+    ) -> None:
+        _ = src_root
+        _ = no_cache
+        captured["exclude_patterns"] = exclude_patterns
+
+    monkeypatch.setattr("archetype.check.load_project", fake_load_project)
+    monkeypatch.setattr(
+        "archetype.check.registry.run_all",
+        lambda *, group_filter=None, workers=1: [],
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--exclude",
+            "/vendor/",
+            "--exclude",
+            "/migrations/",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["exclude_patterns"] == ["/vendor/", "/migrations/"]
+
+
+def test_cli_exclude_patterns_from_pyproject_are_applied(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    vendor_pkg = project_path / "vendor"
+    vendor_pkg.mkdir(parents=True)
+    (vendor_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (vendor_pkg / "helpers.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    api_module = project_path / "simple_project" / "api.py"
+    api_module.write_text(
+        "\n".join(
+            [
+                "from simple_project import db",
+                "from simple_project import services",
+                "from simple_project.internal import tokens",
+                "from vendor import helpers",
+                "",
+                "def handle() -> None:",
+                "    return None",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-vendor')",
+                "def _rule_api_not_vendor() -> None:",
+                "    imports('simple_project.api').must_not_import('vendor.*')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    without_config = runner.invoke(cli, ["check", str(project_path)])
+    (project_path / "pyproject.toml").write_text(
+        "\n".join(
+            [
+                "[tool.archetype]",
+                'exclude = ["/vendor/"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with_config = runner.invoke(cli, ["check", str(project_path)])
+
+    assert without_config.exit_code == 1
+    assert with_config.exit_code == 0
+
+
+def test_cli_exclude_patterns_from_archetype_toml_are_applied(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    vendor_pkg = project_path / "vendor"
+    vendor_pkg.mkdir(parents=True)
+    (vendor_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (vendor_pkg / "helpers.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    (project_path / "simple_project" / "api.py").write_text(
+        "\n".join(
+            [
+                "from vendor import helpers",
+                "",
+                "def handle() -> None:",
+                "    return None",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-vendor')",
+                "def _rule_api_not_vendor() -> None:",
+                "    imports('simple_project.api').must_not_import('vendor.*')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project_path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                'exclude = ["/vendor/"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+
+
+def test_cli_defaults_from_archetype_toml_are_applied(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
+    (project_path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                'format = "json"',
+                "quiet = true",
+                'group = "core"',
+                'exclude = ["/vendor/"]',
+                "workers = 3",
+                "cache = false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object | None] = {
+        "group_filter": None,
+        "workers": None,
+        "no_cache": None,
+        "exclude_patterns": None,
+    }
+
+    def fake_load_project(
+        _project_root: Path,
+        src_root: Path | None = None,
+        no_cache: bool = False,
+        exclude_patterns=None,
+    ) -> None:
+        _ = src_root
+        captured["no_cache"] = no_cache
+        captured["exclude_patterns"] = exclude_patterns
+
+    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
+        captured["group_filter"] = group_filter
+        captured["workers"] = workers
+        return []
+
+    monkeypatch.setattr("archetype.check.load_project", fake_load_project)
+    monkeypatch.setattr("archetype.check.registry.run_all", fake_run_all)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["total"] == 0
+    assert captured["group_filter"] == "core"
+    assert captured["workers"] == 3
+    assert captured["no_cache"] is True
+    assert captured["exclude_patterns"] == ["/vendor/"]
+
+
+def test_cli_flags_override_archetype_toml_defaults(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text("from archetype import rule\n", encoding="utf-8")
+    (project_path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                'format = "json"',
+                "quiet = true",
+                'group = "core"',
+                'exclude = ["/vendor/"]',
+                "workers = 5",
+                "cache = false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object | None] = {
+        "group_filter": None,
+        "workers": None,
+        "no_cache": None,
+        "exclude_patterns": None,
+    }
+
+    def fake_load_project(
+        _project_root: Path,
+        src_root: Path | None = None,
+        no_cache: bool = False,
+        exclude_patterns=None,
+    ) -> None:
+        _ = src_root
+        captured["no_cache"] = no_cache
+        captured["exclude_patterns"] = exclude_patterns
+
+    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
+        captured["group_filter"] = group_filter
+        captured["workers"] = workers
+        return []
+
+    monkeypatch.setattr("archetype.check.load_project", fake_load_project)
+    monkeypatch.setattr("archetype.check.registry.run_all", fake_run_all)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--format",
+            "text",
+            "--no-quiet",
+            "--group",
+            "override-group",
+            "--exclude",
+            "/migrations/",
+            "--workers",
+            "2",
+            "--cache",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Summary: 0 passed, 0 failed, 0 warned, 0 skipped, 0 total rules." in result.output
+    assert captured["group_filter"] == "override-group"
+    assert captured["workers"] == 2
+    assert captured["no_cache"] is False
+    assert captured["exclude_patterns"] == ["/migrations/"]
 
 
 def test_cli_quiet_flag_is_accepted(tmp_path: Path) -> None:
@@ -514,6 +790,7 @@ def test_cli_format_flag_is_accepted(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "No such option" not in result.output
     payload = json.loads(result.output)
+    assert payload["schema_version"] == 1
     assert payload["summary"]["total"] == 1
 
 
@@ -526,7 +803,9 @@ def test_cli_format_json_outputs_parseable_json(tmp_path: Path) -> None:
 
     payload = json.loads(result.output)
     assert isinstance(payload, dict)
+    assert payload["schema_version"] == 1
     assert "summary" in payload
+    assert "violations" in payload
     assert "rules" in payload
 
 
@@ -545,6 +824,7 @@ def test_cli_format_json_summary_counts_are_correct(tmp_path: Path) -> None:
         "skipped": 1,
         "total": 6,
     }
+    assert payload["violations"] == {"total": 3, "new": 3, "suppressed": 0}
 
 
 def test_cli_format_json_quiet_outputs_parseable_json_with_full_summary(
@@ -566,8 +846,156 @@ def test_cli_format_json_quiet_outputs_parseable_json_with_full_summary(
         "skipped": 1,
         "total": 6,
     }
+    assert payload["violations"] == {"total": 3, "new": 3, "suppressed": 0}
     assert isinstance(payload["rules"], list)
     assert len(payload["rules"]) == 6
+
+
+def test_cli_write_baseline_creates_valid_json_file(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    baseline_path = tmp_path / "archetype-baseline.json"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--write-baseline",
+            str(baseline_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+    assert payload["version"] == 1
+    assert isinstance(payload["violations"], list)
+    assert len(payload["violations"]) == 1
+    violation = payload["violations"][0]
+    assert violation["rule"] == "api-must-not-import-db"
+    assert violation["module"] == "simple_project.api"
+    assert violation["file"] == "simple_project/api.py"
+    assert violation["line"] == 7
+
+
+def test_cli_baseline_suppresses_existing_violations_and_exits_zero(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    baseline_path = tmp_path / "archetype-baseline.json"
+    runner = CliRunner()
+
+    write_result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--write-baseline",
+            str(baseline_path),
+        ],
+    )
+    suppress_result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--baseline",
+            str(baseline_path),
+        ],
+    )
+
+    assert write_result.exit_code == 1
+    assert suppress_result.exit_code == 0
+    assert "Summary: 1 passed, 0 failed, 0 warned, 0 skipped, 1 total rules." in suppress_result.output
+
+
+def test_cli_exit_code_is_non_zero_only_for_new_violations_with_baseline(
+    tmp_path: Path,
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+                "@rule('main-must-not-import-db')",
+                "def _rule_main_not_db() -> None:",
+                "    imports('simple_project.main').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    baseline_path = tmp_path / "archetype-baseline.json"
+    runner = CliRunner()
+
+    write_result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--write-baseline",
+            str(baseline_path),
+        ],
+    )
+    assert write_result.exit_code == 1
+
+    (project_path / "simple_project" / "main.py").write_text(
+        "\n".join(
+            [
+                '"""Entry module for the simple fixture project."""',
+                "",
+                "from simple_project import api",
+                "from simple_project import db",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--baseline",
+            str(baseline_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["summary"]["failed"] == 1
+    assert payload["violations"] == {"total": 2, "new": 1, "suppressed": 1}
 
 
 def test_cli_format_text_behavior_is_unchanged(tmp_path: Path) -> None:
@@ -689,3 +1117,294 @@ def test_cli_quiet_short_flag_matches_long_flag_behavior(tmp_path: Path) -> None
 
     assert long_result.exit_code == short_result.exit_code
     assert long_result.output == short_result.output
+
+
+def test_cli_changed_from_accepts_branch_name_and_scopes_reporting(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    changed_file = (project_path / "simple_project" / "api.py").resolve()
+
+    captured: dict[str, str | None] = {"ref": None}
+
+    def fake_changed_from(
+        ref: str,
+        _root: Path,
+        *,
+        exclude_patterns=None,
+    ) -> set[Path]:
+        _ = exclude_patterns
+        captured["ref"] = ref
+        return {changed_file}
+
+    monkeypatch.setattr("archetype.check.get_files_changed_from", fake_changed_from)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--changed-from", "origin/main"])
+
+    assert result.exit_code == 1
+    assert captured["ref"] == "origin/main"
+    assert "Scope: changed-files mode from 'origin/main' (1 changed Python files)" in result.output
+    assert "✗ api-must-not-import-db" in result.output
+
+
+def test_cli_changed_from_accepts_commit_sha_and_filters_out_of_scope_violations(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    sha = "a1b2c3d4"
+
+    monkeypatch.setattr(
+        "archetype.check.get_files_changed_from",
+        lambda *_args, **_kwargs: set(),
+    )
+
+    result = runner.invoke(cli, ["check", str(project_path), "--changed-from", sha])
+
+    assert result.exit_code == 0
+    assert f"Scope: changed-files mode from '{sha}' (0 changed Python files)" in result.output
+    assert "✓ api-must-not-import-db" in result.output
+
+
+def test_cli_changed_from_json_includes_scope_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    changed_file = (project_path / "simple_project" / "api.py").resolve()
+    runner = CliRunner()
+
+    monkeypatch.setattr(
+        "archetype.check.get_files_changed_from",
+        lambda *_args, **_kwargs: {changed_file},
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--changed-from",
+            "origin/main",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["scope"] == {
+        "mode": "changed-files",
+        "changed_from": "origin/main",
+        "changed_files_count": 1,
+        "changed_files": ["simple_project/api.py"],
+    }
+
+
+def test_cli_changed_from_scope_ignores_excluded_paths(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    changed_file = (project_path / "vendor" / "helpers.py").resolve()
+
+    monkeypatch.setattr(
+        "archetype.check.get_files_changed_from",
+        lambda *_args, **_kwargs: {changed_file},
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--changed-from",
+            "origin/main",
+            "--exclude",
+            "/vendor/",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Scope: changed-files mode from 'origin/main' (0 changed Python files)" in result.output
+
+
+def test_cli_install_hook_creates_pre_commit_hook(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
+
+    monkeypatch.setattr(
+        "archetype.check._resolve_git_hook_paths",
+        lambda _path: (project_path, hook_path),
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["install-hook", str(project_path)])
+
+    assert result.exit_code == 0
+    content = hook_path.read_text(encoding="utf-8")
+    assert content.startswith("#!/bin/sh")
+    assert "# >>> archetype pre-commit hook >>>" in content
+    assert 'archetype check "$repo_root"' in content
+    assert hook_path.stat().st_mode & 0o111
+
+
+def test_cli_install_hook_is_idempotent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
+
+    monkeypatch.setattr(
+        "archetype.check._resolve_git_hook_paths",
+        lambda _path: (project_path, hook_path),
+    )
+    runner = CliRunner()
+
+    first = runner.invoke(cli, ["install-hook", str(project_path)])
+    second = runner.invoke(cli, ["install-hook", str(project_path)])
+
+    assert first.exit_code == 0
+    assert second.exit_code == 0
+    content = hook_path.read_text(encoding="utf-8")
+    assert content.count("# >>> archetype pre-commit hook >>>") == 1
+    assert "already installed" in second.output
+
+
+def test_cli_install_hook_appends_to_existing_pre_commit_hook(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    hook_path = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
+    hook_path.write_text(
+        "\n".join(
+            [
+                "#!/bin/sh",
+                "echo \"existing pre-commit checks\"",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "archetype.check._resolve_git_hook_paths",
+        lambda _path: (project_path, hook_path),
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["install-hook", str(project_path)])
+
+    assert result.exit_code == 0
+    content = hook_path.read_text(encoding="utf-8")
+    assert "existing pre-commit checks" in content
+    assert "# >>> archetype pre-commit hook >>>" in content
+    assert "Appended Archetype block" in result.output
+
+
+def test_cli_install_hook_errors_when_git_paths_cannot_be_resolved(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    def _raise(_path: Path) -> tuple[Path, Path]:
+        raise ValueError("Unable to resolve git hooks path: fatal: not a git repository")
+
+    monkeypatch.setattr("archetype.check._resolve_git_hook_paths", _raise)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["install-hook", str(project_path)])
+
+    assert result.exit_code == 1
+    assert "not a git repository" in result.output
+
+
+def test_cli_github_annotations_flag_emits_github_error_commands(
+    tmp_path: Path,
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        ["check", str(project_path), "--github-annotations"],
+    )
+
+    assert result.exit_code == 1
+    assert "::error file=simple_project/api.py,line=7,title=archetype%3A api-must-not-import-db::" in result.output

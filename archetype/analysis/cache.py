@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
+from typing import Iterable
 
 import networkx as nx
+
+from archetype.analysis.path_filters import is_path_excluded, normalize_exclude_patterns
 
 
 def get_cache_path(project_root: Path) -> Path:
@@ -13,10 +16,15 @@ def get_cache_path(project_root: Path) -> Path:
     return project_root.resolve() / ".archetype_cache"
 
 
-def compute_file_signatures(project_root: Path) -> dict[str, float]:
+def compute_file_signatures(
+    project_root: Path,
+    *,
+    exclude_patterns: Iterable[str] | None = None,
+) -> dict[str, float]:
     """Compute mtime signatures for Python files under project_root."""
     signatures: dict[str, float] = {}
     root = project_root.resolve()
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
 
     for file_path in root.rglob("*.py"):
         parts = file_path.parts
@@ -24,7 +32,11 @@ def compute_file_signatures(project_root: Path) -> dict[str, float]:
             continue
         if ".venv" in parts or "venv" in parts or "site-packages" in parts:
             continue
+        if is_path_excluded(file_path, root, normalized_excludes):
+            continue
         signatures[str(file_path.resolve())] = file_path.stat().st_mtime
+    for excluded in normalized_excludes:
+        signatures[f"__archetype_exclude__:{excluded}"] = -1.0
 
     return signatures
 

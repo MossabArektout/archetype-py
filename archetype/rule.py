@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from pathlib import Path
 from typing import Callable
@@ -59,69 +60,67 @@ class RuleRegistry:
         self._rules.clear()
         self._entries.clear()
 
-    def run_all(self, group_filter: str | None = None) -> list[RuleResult]:
+    def _run_entry(self, func: RuleFn, group_name: str | None) -> RuleResult:
+        rule_name = getattr(func, "_rule_name", func.__name__)
+        since_date = getattr(func, "_since_date", None)
+        if getattr(func, "_skipped", False):
+            return RuleResult(
+                name=rule_name,
+                passed=True,
+                skipped=True,
+                skip_reason=getattr(func, "_skip_reason", None),
+                group=group_name,
+                since_date=since_date,
+            )
+        try:
+            outcome = func()
+            if isinstance(outcome, RuleResult):
+                if outcome.group is None:
+                    outcome.group = group_name
+                if outcome.since_date is None:
+                    outcome.since_date = since_date
+                return outcome
+            return RuleResult(
+                name=rule_name,
+                passed=True,
+                group=group_name,
+                since_date=since_date,
+            )
+        except AssertionError as exc:
+            violations = getattr(exc, "violations", [])
+            filtered_violations = getattr(exc, "filtered_violations", [])
+            violation_context = getattr(exc, "violation_context", [])
+            return RuleResult(
+                name=rule_name,
+                passed=False,
+                violations=violations,
+                group=group_name,
+                since_date=getattr(exc, "since_date", since_date),
+                filtered_violations=filtered_violations,
+                violation_context=violation_context,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return RuleResult(
+                name=rule_name,
+                passed=False,
+                error=exc,
+                group=group_name,
+                since_date=since_date,
+            )
+
+    def run_all(self, group_filter: str | None = None, workers: int = 1) -> list[RuleResult]:
         """Execute all registered rules and collect results."""
-        results: list[RuleResult] = []
-        for func, group_name in self._entries:
-            if group_filter is not None and group_name != group_filter:
-                continue
-            rule_name = getattr(func, "_rule_name", func.__name__)
-            since_date = getattr(func, "_since_date", None)
-            if getattr(func, "_skipped", False):
-                results.append(
-                    RuleResult(
-                        name=rule_name,
-                        passed=True,
-                        skipped=True,
-                        skip_reason=getattr(func, "_skip_reason", None),
-                        group=group_name,
-                        since_date=since_date,
-                    )
-                )
-                continue
-            try:
-                outcome = func()
-                if isinstance(outcome, RuleResult):
-                    if outcome.group is None:
-                        outcome.group = group_name
-                    if outcome.since_date is None:
-                        outcome.since_date = since_date
-                    results.append(outcome)
-                else:
-                    results.append(
-                        RuleResult(
-                            name=rule_name,
-                            passed=True,
-                            group=group_name,
-                            since_date=since_date,
-                        )
-                    )
-            except AssertionError as exc:
-                violations = getattr(exc, "violations", [])
-                filtered_violations = getattr(exc, "filtered_violations", [])
-                violation_context = getattr(exc, "violation_context", [])
-                results.append(
-                    RuleResult(
-                        name=rule_name,
-                        passed=False,
-                        violations=violations,
-                        group=group_name,
-                        since_date=getattr(exc, "since_date", since_date),
-                        filtered_violations=filtered_violations,
-                        violation_context=violation_context,
-                    )
-                )
-            except Exception as exc:  # noqa: BLE001
-                results.append(
-                    RuleResult(
-                        name=rule_name,
-                        passed=False,
-                        error=exc,
-                        group=group_name,
-                        since_date=since_date,
-                    )
-                )
-        return results
+        entries = [
+            (func, group_name)
+            for func, group_name in self._entries
+            if group_filter is None or group_name == group_filter
+        ]
+        if workers <= 1:
+            return [self._run_entry(func, group_name) for func, group_name in entries]
+        funcs = [func for func, _group_name in entries]
+        groups = [group_name for _func, group_name in entries]
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            return list(executor.map(self._run_entry, funcs, groups))
 
 
 registry = RuleRegistry()
@@ -237,7 +236,11 @@ def since(date_str: str) -> Callable[[RuleFn], RuleFn]:
                 project_root = query_module._current_root
 
                 recent_files = (
-                    get_files_modified_after(date_str, project_root)
+                    get_files_modified_after(
+                        date_str,
+                        project_root,
+                        exclude_patterns=query_module._exclude_patterns,
+                    )
                     if project_root is not None
                     else None
                 )

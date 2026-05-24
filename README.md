@@ -16,6 +16,7 @@
 - [Minimum `architecture.py` Example](#minimum-architecturepy-example)
 - [Features](#features)
 - [Decorators and Commands](#decorators-and-commands)
+- [Baseline Mode](#baseline-mode)
 - [Perfect For](#perfect-for)
 - [Installation](#installation)
 - [Build & Test](#build--test)
@@ -205,11 +206,21 @@ def no_import_cycles() -> None:
 - Import cycle detection
 - Protected module boundaries
 
+### Project Layout Support
+- Flat package layouts
+- Single `src/` layouts
+- Namespace packages (PEP 420, without `__init__.py`)
+- Monorepos with multiple `src` roots
+
 ### Workflow Features
 - Rule grouping
 - Warning-level rules
 - Temporary rule skips with context
 - Changed-file enforcement (`since`)
+- Legacy baseline snapshot/suppression (`--write-baseline`, `--baseline`)
+- Diff-scoped checks (`--changed-from <ref>`)
+- First-class project config defaults (`archetype.toml`)
+- Path exclusions (`--exclude`, `archetype.toml`, legacy `[tool.archetype].exclude`)
 - Pytest integration
 - CI-friendly exit codes
 
@@ -257,8 +268,184 @@ Invalid date '01-01-2026'. Expected format: YYYY-MM-DD.
 | `archetype check [path] --quiet` / `-q` | Shows only failures and warnings, hiding passing and skipped rules. | `archetype check . --quiet` |
 | `archetype check [path] --format json` | Emits machine-readable JSON output for CI logs or custom tooling; `text` remains the default format. | `archetype check . --format json` |
 | `archetype check [path] --no-cache` | Forces a fresh import graph rebuild instead of using a cached graph. | `archetype check . --no-cache` |
+| `archetype check [path] --exclude <pattern>` | Excludes paths from analysis and reporting (repeatable). | `archetype check . --exclude /vendor/ --exclude /migrations/` |
+| `archetype check [path] --write-baseline <file> --baseline <file>` | Writes a baseline snapshot and suppresses matching legacy violations so only new ones fail. | `archetype check . --baseline archetype-baseline.json` |
+| `archetype check [path] --changed-from <ref>` | Limits reported violations to files changed since `<ref>` (branch name or commit SHA). | `archetype check . --changed-from origin/main` |
+| `archetype check [path] --github-annotations` | Emits GitHub Actions inline annotations (`::error`/`::warning`) for PR diffs. | `archetype check . --github-annotations` |
+| `archetype install-hook [path]` | Installs (or updates) a managed git pre-commit hook that runs `archetype check` before each commit. | `archetype install-hook .` |
 
+### Excluding Paths
 
+Exclude noisy folders such as generated code, migrations, or vendored dependencies:
+
+```bash
+archetype check . --exclude /vendor/ --exclude /migrations/
+```
+
+You can also define defaults in `archetype.toml`:
+
+```toml
+exclude = ["/vendor/", "/migrations/"]
+```
+
+Legacy compatibility: if `archetype.toml` is missing, Archetype still reads
+`[tool.archetype]` from `pyproject.toml`.
+
+### Project Config (`archetype.toml`)
+
+Archetype auto-discovers `archetype.toml` in the project root passed to
+`archetype check [path]`.
+
+Supported defaults:
+
+- `format` (`"text"` or `"json"`)
+- `quiet` (`true`/`false`)
+- `group` (`string`)
+- `exclude` (`string` or `string[]`)
+- `workers` (`int >= 1`)
+- `cache` (`true`/`false`)
+
+Example:
+
+```toml
+format = "json"
+quiet = true
+group = "Layer boundaries"
+exclude = ["/vendor/", "/migrations/"]
+workers = 4
+cache = true
+```
+
+Precedence:
+
+- CLI flags override `archetype.toml`.
+- `archetype.toml` overrides built-in defaults.
+- If config is missing, behavior remains unchanged.
+
+### Pre-commit Hook
+
+Install a git pre-commit hook in one command:
+
+```bash
+archetype install-hook .
+```
+
+Behavior:
+
+- Creates `.git/hooks/pre-commit` if missing.
+- Appends an Archetype-managed block if a custom pre-commit hook already exists.
+- Updates the managed block if Archetype already installed it.
+- Blocks the commit when `archetype check` fails, and prints violations directly in the commit terminal output.
+
+### Changed-files Mode
+
+Use diff scope to speed up checks in large repositories:
+
+```bash
+archetype check . --changed-from origin/main
+```
+
+`<ref>` can be a branch name (for example `origin/main`) or a commit SHA.
+
+When enabled:
+- Text output shows a scope banner with mode, ref, and changed file count.
+- JSON output includes a `scope` object with mode/ref/file metadata.
+
+### GitHub PR Annotations
+
+Use GitHub Actions annotations to surface violations directly on PR diff lines:
+
+```bash
+archetype check . --github-annotations
+```
+
+In GitHub Actions, these appear as inline file/line annotations for each violation
+while preserving the normal non-zero exit code when checks fail.
+
+## Baseline Mode
+
+Use baseline mode to adopt archetype in legacy repos without failing on pre-existing violations.
+
+Create a baseline snapshot:
+
+```bash
+archetype check . --write-baseline archetype-baseline.json
+```
+
+Run checks against that baseline (matching old violations are suppressed):
+
+```bash
+archetype check . --baseline archetype-baseline.json
+```
+
+You can combine with JSON output to track counts:
+
+```bash
+archetype check . --baseline archetype-baseline.json --format json
+```
+
+JSON output includes:
+- `schema_version`: top-level contract version for machine consumers
+- `summary`: rule-level pass/fail/warn/skip counts
+- `violations.total`: total current violations before suppression
+- `violations.new`: violations not found in the baseline
+- `violations.suppressed`: violations matched and suppressed by baseline
+
+### JSON Contract (Versioned)
+
+Archetype JSON output is versioned for CI and other integrations.
+
+Current contract version:
+
+- `schema_version: 1`
+
+Versioning policy:
+
+- Non-breaking additions (for example new optional fields) keep the same `schema_version`.
+- Breaking shape changes (rename/remove/type changes) must increment `schema_version`.
+- Contract tests in CI enforce the current schema shape.
+
+Field definitions:
+
+- `schema_version` (`int`): machine-readable contract version.
+- `summary` (`object`): counts by rule status.
+- `violations` (`object`): aggregate violation counts.
+- `rules` (`array`): per-rule results with status and violations.
+- `scope` (`object`, optional): present when `--changed-from` is used.
+
+Example (`--format json`):
+
+```json
+{
+  "schema_version": 1,
+  "summary": {
+    "passed": 2,
+    "failed": 1,
+    "warned": 0,
+    "skipped": 0,
+    "total": 3
+  },
+  "violations": {
+    "total": 1,
+    "new": 1,
+    "suppressed": 0
+  },
+  "rules": [
+    {
+      "name": "api-must-not-import-db",
+      "status": "failed",
+      "group": "core",
+      "since_date": null,
+      "violations": [
+        {
+          "module": "simple_project.api",
+          "message": "Module 'simple_project.api' must not import 'simple_project.db'"
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## Perfect For
 
@@ -299,6 +486,8 @@ archetype check .
 - `0`: no blocking failures (passes and warnings only)
 - `1`: one or more blocking rule failures
 
+When `--baseline` is used, exit code `1` means there are **new** blocking violations not present in the baseline.
+
 ---
 
 ## Troubleshooting
@@ -307,6 +496,7 @@ archetype check .
 - Rules seem to do nothing: confirm your rules are decorated with `@rule("...")`; undecorated functions are not registered.
 - `@since(...)` behavior is unexpected: verify the date format is `YYYY-MM-DD` and that your git history is available in the checked path.
 - Import path mismatches: use fully qualified module paths (`myapp.api`, not file paths like `src/api.py`).
+- Namespace package imports not showing up: ensure modules live under discovered package roots (repo root, top-level `src/`, or nested monorepo `*/src` roots).
 
 ---
 

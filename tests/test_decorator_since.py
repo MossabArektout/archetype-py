@@ -39,7 +39,11 @@ def test_since_passes_when_all_violations_are_before_since_date(
     old_file = (tmp_path / "old.py").resolve()
     old_file.write_text("print('old')\n", encoding="utf-8")
 
-    monkeypatch.setattr(rule_module, "get_files_modified_after", lambda *_: set())
+    monkeypatch.setattr(
+        rule_module,
+        "get_files_modified_after",
+        lambda *_args, **_kwargs: set(),
+    )
 
     violations = [
         Violation(
@@ -75,7 +79,11 @@ def test_since_fails_with_only_violations_in_recent_files(
     recent_file.write_text("print('recent')\n", encoding="utf-8")
     old_file.write_text("print('old')\n", encoding="utf-8")
 
-    monkeypatch.setattr(rule_module, "get_files_modified_after", lambda *_: {recent_file})
+    monkeypatch.setattr(
+        rule_module,
+        "get_files_modified_after",
+        lambda *_args, **_kwargs: {recent_file},
+    )
 
     recent_violation = Violation(
         module="app.api",

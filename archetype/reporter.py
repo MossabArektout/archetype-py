@@ -9,7 +9,10 @@ from pathlib import Path
 
 from rich.console import Console
 
+from archetype.baseline import ViolationCounts
 from archetype.analysis.models import RuleResult, Violation
+
+JSON_SCHEMA_VERSION = 1
 
 
 def _extract_target(violation: Violation) -> str:
@@ -184,20 +187,43 @@ def _result_status(result: RuleResult) -> str:
     return "failed"
 
 
-def format_results_json(results: list[RuleResult]) -> Mapping[str, object]:
+def _violation_counts(results: list[RuleResult]) -> ViolationCounts:
+    total = 0
+    suppressed = 0
+    for result in results:
+        if result.skipped or result.error is not None:
+            continue
+        total += len(result.violations) + len(result.suppressed_violations)
+        suppressed += len(result.suppressed_violations)
+    return ViolationCounts(total=total, new=total - suppressed, suppressed=suppressed)
+
+
+def format_results_json(
+    results: list[RuleResult],
+    *,
+    violation_counts: ViolationCounts | None = None,
+    scope: Mapping[str, object] | None = None,
+) -> Mapping[str, object]:
     """Build a JSON-serializable report for rule execution results."""
     skipped = sum(1 for result in results if result.skipped)
     warned = sum(1 for result in results if result.warned)
     passed = sum(1 for result in results if result.passed and not result.skipped)
     failed = len(results) - passed - warned - skipped
+    counts = violation_counts or _violation_counts(results)
 
-    return {
+    payload: dict[str, object] = {
+        "schema_version": JSON_SCHEMA_VERSION,
         "summary": {
             "passed": passed,
             "failed": failed,
             "warned": warned,
             "skipped": skipped,
             "total": len(results),
+        },
+        "violations": {
+            "total": counts.total,
+            "new": counts.new,
+            "suppressed": counts.suppressed,
         },
         "rules": [
             {
@@ -213,6 +239,61 @@ def format_results_json(results: list[RuleResult]) -> Mapping[str, object]:
             for result in results
         ],
     }
+    if scope is not None:
+        payload["scope"] = dict(scope)
+    return payload
+
+
+def _github_escape_data(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _github_escape_property(value: str) -> str:
+    escaped = _github_escape_data(value)
+    return escaped.replace(":", "%3A").replace(",", "%2C")
+
+
+def format_github_annotations(
+    results: list[RuleResult],
+    *,
+    project_root: Path,
+) -> list[str]:
+    """Build GitHub Actions workflow annotation commands for rule violations."""
+    annotations: list[str] = []
+    resolved_root = project_root.resolve()
+
+    for result in results:
+        if result.skipped or result.passed:
+            continue
+        if not result.violations and result.error is None:
+            continue
+
+        level = "warning" if result.warned else "error"
+        title = _github_escape_property(f"archetype: {result.name}")
+
+        if result.error is not None and not result.violations:
+            message = _github_escape_data(f"{result.name}: Rule error: {result.error}")
+            annotations.append(f"::{level} title={title}::{message}")
+            continue
+
+        for violation in result.violations:
+            file_value = str(violation.file)
+            file_path = Path(file_value)
+            if file_path.is_absolute():
+                try:
+                    file_path = file_path.resolve().relative_to(resolved_root)
+                except ValueError:
+                    file_path = file_path.resolve()
+            line = violation.line if violation.line > 0 else 1
+            file_prop = _github_escape_property(file_path.as_posix())
+            message = _github_escape_data(
+                f"{result.name}: {violation.message}"
+            )
+            annotations.append(
+                f"::{level} file={file_prop},line={line},title={title}::{message}"
+            )
+
+    return annotations
 
 
 def print_results(results: list[RuleResult], quiet: bool = False) -> None:
