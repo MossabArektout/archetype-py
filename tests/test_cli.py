@@ -73,6 +73,62 @@ def test_cli_exits_one_when_architecture_file_missing(tmp_path: Path) -> None:
     assert str(project_path / "architecture.py") in result.output
 
 
+def test_cli_reports_invalid_python_source_without_traceback(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    invalid_file = project_path / "simple_project" / "broken.py"
+    invalid_file.write_text("def broken(:\n    pass\n", encoding="utf-8")
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import rule",
+                "",
+                "@rule('noop')",
+                "def _noop() -> None:",
+                "    return None",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 1
+    assert "Error: failed to parse" in result.output
+    assert str(invalid_file) in result.output
+    assert "invalid syntax" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_cli_reports_invalid_file_encoding_without_traceback(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    unreadable_file = project_path / "simple_project" / "bad_encoding.py"
+    unreadable_file.write_bytes(b"\xff")
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import rule",
+                "",
+                "@rule('noop')",
+                "def _noop() -> None:",
+                "    return None",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 1
+    assert "Error: failed to read" in result.output
+    assert str(unreadable_file) in result.output
+    assert "utf-8" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_cli_exits_zero_when_all_rules_pass(tmp_path: Path) -> None:
     project_path = _make_project_copy(tmp_path)
     (project_path / "architecture.py").write_text(

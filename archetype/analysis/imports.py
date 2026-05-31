@@ -25,6 +25,38 @@ _IGNORED_DIRS = {
 }
 
 
+class ImportGraphBuildError(ValueError):
+    """Raised when a Python file cannot be read or parsed for graph building."""
+
+
+def _syntax_error_reason(exc: SyntaxError) -> str:
+    location_parts = []
+    if exc.lineno is not None:
+        location_parts.append(f"line {exc.lineno}")
+    if exc.offset is not None:
+        location_parts.append(f"column {exc.offset}")
+    location = f" ({', '.join(location_parts)})" if location_parts else ""
+    return f"{exc.msg}{location}"
+
+
+def _read_python_source(file_path: Path) -> str:
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ImportGraphBuildError(f"failed to read {file_path}: {exc}") from exc
+    except OSError as exc:
+        raise ImportGraphBuildError(f"failed to read {file_path}: {exc}") from exc
+
+
+def _parse_python_source(source: str, file_path: Path) -> ast.AST:
+    try:
+        return ast.parse(source, filename=str(file_path))
+    except SyntaxError as exc:
+        raise ImportGraphBuildError(
+            f"failed to parse {file_path}: {_syntax_error_reason(exc)}"
+        ) from exc
+
+
 def path_to_module(file_path: Path, project_root: Path) -> str:
     """Convert a Python file path to its fully-qualified module path."""
     relative = file_path.relative_to(project_root).with_suffix("")
@@ -194,8 +226,8 @@ def build_import_graph(
 
         graph.add_node(current_module)
 
-        source = file_path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(file_path))
+        source = _read_python_source(file_path)
+        tree = _parse_python_source(source, file_path)
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

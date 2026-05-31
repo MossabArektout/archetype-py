@@ -21,6 +21,7 @@ from archetype.baseline import (
     load_baseline,
     write_baseline,
 )
+from archetype.analysis.imports import ImportGraphBuildError
 from archetype.analysis.git_utils import get_files_changed_from
 from archetype.analysis.path_filters import filter_excluded_paths
 from archetype.config import load_check_config
@@ -301,12 +302,16 @@ def check(
         effective_excludes = list(exclude_patterns)
 
     use_cache = True if effective_cache is None else effective_cache
-    load_project(
-        project_path,
-        src_root=src_root,
-        no_cache=not use_cache,
-        exclude_patterns=effective_excludes,
-    )
+    try:
+        load_project(
+            project_path,
+            src_root=src_root,
+            no_cache=not use_cache,
+            exclude_patterns=effective_excludes,
+        )
+    except ImportGraphBuildError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
 
     module_name = f"_archetype_user_architecture_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(module_name, architecture_file)
