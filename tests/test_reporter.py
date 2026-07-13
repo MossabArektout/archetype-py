@@ -182,6 +182,7 @@ def test_format_results_json_contract_shape_is_stable() -> None:
                 "status": "passed",
                 "group": None,
                 "since_date": None,
+                "policy": "error",
                 "violations": [],
                 "diagnostics": [],
             },
@@ -190,6 +191,7 @@ def test_format_results_json_contract_shape_is_stable() -> None:
                 "status": "failed",
                 "group": "core",
                 "since_date": "2026-01-01",
+                "policy": "error",
                 "violations": [
                     {
                         "module": "simple_project.api",
@@ -203,6 +205,40 @@ def test_format_results_json_contract_shape_is_stable() -> None:
             },
         ],
     }
+
+
+def test_format_results_json_reports_warning_and_off_policy_statuses() -> None:
+    results = [
+        RuleResult(
+            name="warning-rule",
+            passed=False,
+            warned=True,
+            is_warning=True,
+            policy="warning",
+            violations=[_violation()],
+        ),
+        RuleResult(
+            name="off-rule",
+            passed=True,
+            skipped=True,
+            skip_reason="Disabled by policy",
+            policy="off",
+        ),
+    ]
+
+    payload = format_results_json(results)
+
+    assert payload["summary"] == {
+        "passed": 0,
+        "failed": 0,
+        "warned": 1,
+        "skipped": 1,
+        "total": 2,
+    }
+    assert payload["rules"][0]["status"] == "warned"
+    assert payload["rules"][0]["policy"] == "warning"
+    assert payload["rules"][1]["status"] == "off"
+    assert payload["rules"][1]["policy"] == "off"
 
 
 def test_format_github_annotations_emits_error_and_warning_commands() -> None:

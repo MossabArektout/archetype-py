@@ -16,6 +16,7 @@ from archetype.dsl import query as query_module
 RuleFn = Callable[[], None | RuleResult]
 RuleEntry = tuple[RuleFn, str | None]
 _current_group = threading.local()
+RulePolicy = str
 
 
 def _get_current_group() -> str | None:
@@ -60,9 +61,31 @@ class RuleRegistry:
         self._rules.clear()
         self._entries.clear()
 
-    def _run_entry(self, func: RuleFn, group_name: str | None) -> RuleResult:
+    def _apply_policy(self, result: RuleResult, policy: RulePolicy) -> RuleResult:
+        result.policy = policy
+        if policy == "warning" and not result.skipped and not result.passed:
+            result.warned = True
+            result.is_warning = True
+        return result
+
+    def _run_entry(
+        self,
+        func: RuleFn,
+        group_name: str | None,
+        policy: RulePolicy = "error",
+    ) -> RuleResult:
         rule_name = getattr(func, "_rule_name", func.__name__)
         since_date = getattr(func, "_since_date", None)
+        if policy == "off":
+            return RuleResult(
+                name=rule_name,
+                passed=True,
+                skipped=True,
+                skip_reason="Disabled by policy",
+                group=group_name,
+                since_date=since_date,
+                policy=policy,
+            )
         if getattr(func, "_skipped", False):
             return RuleResult(
                 name=rule_name,
@@ -71,6 +94,7 @@ class RuleRegistry:
                 skip_reason=getattr(func, "_skip_reason", None),
                 group=group_name,
                 since_date=since_date,
+                policy=policy,
             )
         query_module.clear_pattern_diagnostics()
 
@@ -92,14 +116,18 @@ class RuleRegistry:
                     outcome.group = group_name
                 if outcome.since_date is None:
                     outcome.since_date = since_date
-                return with_pattern_diagnostics(outcome)
-            return with_pattern_diagnostics(
-                RuleResult(
-                    name=rule_name,
-                    passed=True,
-                    group=group_name,
-                    since_date=since_date,
-                )
+                return self._apply_policy(with_pattern_diagnostics(outcome), policy)
+            return self._apply_policy(
+                with_pattern_diagnostics(
+                    RuleResult(
+                        name=rule_name,
+                        passed=True,
+                        group=group_name,
+                        since_date=since_date,
+                        policy=policy,
+                    )
+                ),
+                policy,
             )
         except AssertionError as exc:
             violations = getattr(exc, "violations", [])
@@ -108,38 +136,59 @@ class RuleRegistry:
                 *query_module.get_pattern_diagnostics(),
                 *getattr(exc, "violation_context", []),
             ]
-            return RuleResult(
-                name=rule_name,
-                passed=False,
-                violations=violations,
-                group=group_name,
-                since_date=getattr(exc, "since_date", since_date),
-                filtered_violations=filtered_violations,
-                violation_context=violation_context,
+            return self._apply_policy(
+                RuleResult(
+                    name=rule_name,
+                    passed=False,
+                    violations=violations,
+                    group=group_name,
+                    since_date=getattr(exc, "since_date", since_date),
+                    filtered_violations=filtered_violations,
+                    violation_context=violation_context,
+                    policy=policy,
+                ),
+                policy,
             )
         except Exception as exc:  # noqa: BLE001
-            return RuleResult(
-                name=rule_name,
-                passed=False,
-                error=exc,
-                group=group_name,
-                since_date=since_date,
-                violation_context=query_module.get_pattern_diagnostics(),
+            return self._apply_policy(
+                RuleResult(
+                    name=rule_name,
+                    passed=False,
+                    error=exc,
+                    group=group_name,
+                    since_date=since_date,
+                    violation_context=query_module.get_pattern_diagnostics(),
+                    policy=policy,
+                ),
+                policy,
             )
 
-    def run_all(self, group_filter: str | None = None, workers: int = 1) -> list[RuleResult]:
+    def run_all(
+        self,
+        group_filter: str | None = None,
+        workers: int = 1,
+        rule_policies: dict[str, str] | None = None,
+    ) -> list[RuleResult]:
         """Execute all registered rules and collect results."""
         entries = [
             (func, group_name)
             for func, group_name in self._entries
             if group_filter is None or group_name == group_filter
         ]
+        policies = [
+            (rule_policies or {}).get(getattr(func, "_rule_name", func.__name__), "error")
+            for func, _group_name in entries
+        ]
         if workers <= 1:
-            return [self._run_entry(func, group_name) for func, group_name in entries]
+            return [
+                self._run_entry(func, group_name, policy)
+                for (func, group_name), policy in zip(entries, policies, strict=True)
+            ]
         funcs = [func for func, _group_name in entries]
         groups = [group_name for _func, group_name in entries]
+        policy_values = policies
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            return list(executor.map(self._run_entry, funcs, groups))
+            return list(executor.map(self._run_entry, funcs, groups, policy_values))
 
 
 registry = RuleRegistry()

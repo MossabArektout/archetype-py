@@ -200,6 +200,12 @@ group = "Layer boundaries"
 exclude = ["/vendor/", "/migrations/"]
 workers = 4
 cache = true
+
+[rules]
+"legacy-boundary" = "warning"
+
+[rules."deprecated-layer-rule"]
+policy = "off"
 ```
 
 Supported defaults:
@@ -210,6 +216,14 @@ Supported defaults:
 - `exclude`: string or list of strings
 - `workers`: integer greater than or equal to `1`
 - `cache`: `true` or `false`
+
+Per-rule policy:
+
+- `error`: fail the run when the rule fails (default)
+- `warning`: report violations without failing the run or pytest
+- `off`: skip the rule without executing it
+
+Rule names are matched exactly against the name passed to `@rule("...")`.
 
 Precedence:
 
@@ -325,6 +339,7 @@ Each rule includes:
 - `status`
 - `group`
 - `since_date`
+- `policy`
 - `violations`
 - `diagnostics`
 
@@ -359,6 +374,7 @@ Example:
       "status": "failed",
       "group": "Layer boundaries",
       "since_date": null,
+      "policy": "error",
       "violations": [
         {
           "module": "myapp.api.users",

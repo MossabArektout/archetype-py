@@ -17,6 +17,7 @@ class CheckConfig:
     exclude_patterns: list[str] | None = None
     workers: int | None = None
     cache: bool | None = None
+    rule_policies: dict[str, str] | None = None
 
 
 def _read_toml(path: Path) -> dict[str, object]:
@@ -59,6 +60,52 @@ def _ensure_workers(raw: object, *, source: str) -> int:
     return raw
 
 
+def _ensure_policy(raw: object, *, field: str, source: str) -> str:
+    policy = _ensure_str(raw, field=field, source=source)
+    if policy not in {"error", "warning", "off"}:
+        raise ValueError(
+            f"Invalid {source} '{field}': expected 'error', 'warning', or 'off'."
+        )
+    return policy
+
+
+def _parse_rule_policies(raw: object, *, source: str) -> dict[str, str]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid {source} 'rules': expected a TOML table.")
+
+    policies: dict[str, str] = {}
+    for rule_name, raw_rule_cfg in raw.items():
+        if not isinstance(rule_name, str) or not rule_name.strip():
+            raise ValueError(f"Invalid {source} 'rules': expected non-empty rule names.")
+
+        if isinstance(raw_rule_cfg, str):
+            policies[rule_name] = _ensure_policy(
+                raw_rule_cfg,
+                field=f"rules.{rule_name}",
+                source=source,
+            )
+            continue
+
+        if isinstance(raw_rule_cfg, dict):
+            if "policy" not in raw_rule_cfg:
+                raise ValueError(
+                    f"Invalid {source} 'rules.{rule_name}': missing 'policy'."
+                )
+            policies[rule_name] = _ensure_policy(
+                raw_rule_cfg["policy"],
+                field=f"rules.{rule_name}.policy",
+                source=source,
+            )
+            continue
+
+        raise ValueError(
+            f"Invalid {source} 'rules.{rule_name}': expected a policy string or table."
+        )
+    return policies
+
+
 def _parse_check_config(
     payload: dict[str, object],
     *,
@@ -77,6 +124,7 @@ def _parse_check_config(
     exclude_patterns: list[str] | None = None
     workers: int | None = None
     cache: bool | None = None
+    rule_policies = _parse_rule_policies(payload.get("rules"), source=scope)
 
     if "format" in check_cfg:
         format_value = _ensure_str(check_cfg["format"], field="format", source=scope)
@@ -114,6 +162,7 @@ def _parse_check_config(
         exclude_patterns=exclude_patterns,
         workers=workers,
         cache=cache,
+        rule_policies=rule_policies,
     )
 
 

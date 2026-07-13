@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from archetype.analysis.models import RuleResult
+from archetype.config import load_check_config
 from archetype.dsl.query import load_project
 from archetype.reporter import format_violation
 from archetype.rule import registry
@@ -27,6 +28,8 @@ class ArchetypeFile(pytest.File):
     def collect(self):
         registry.clear()
         project_root = self.path.parent
+        config = load_check_config(project_root)
+        rule_policies = config.rule_policies or {}
         load_project(project_root)
 
         module_name = f"_archetype_pytest_architecture_{uuid.uuid4().hex}"
@@ -44,7 +47,11 @@ class ArchetypeFile(pytest.File):
                 f"{group_name}::{rule_name}" if group_name is not None else rule_name
             )
             yield ArchetypeItem.from_parent(
-                self, name=item_name, rule_func=rule_func, file_path=self.path
+                self,
+                name=item_name,
+                rule_func=rule_func,
+                file_path=self.path,
+                policy=rule_policies.get(rule_name, "error"),
             )
 
 
@@ -58,17 +65,40 @@ class ArchetypeItem(pytest.Item):
         parent: pytest.Collector,
         rule_func,
         file_path: Path,
+        policy: str,
     ) -> None:
         super().__init__(name=name, parent=parent)
         self.rule_func = rule_func
         self.file_path = file_path
+        self.policy = policy
 
     def runtest(self) -> None:
+        if self.policy == "off":
+            pytest.skip("Rule disabled by policy")
+
         if getattr(self.rule_func, "_skipped", False):
             reason = getattr(self.rule_func, "_skip_reason", None) or "Rule temporarily skipped"
             pytest.skip(reason)
 
-        outcome = self.rule_func()
+        try:
+            outcome = self.rule_func()
+        except AssertionError as exc:
+            if self.policy == "warning":
+                violations = getattr(exc, "violations", [])
+                details = "; ".join(format_violation(violation) for violation in violations)
+                reason = "Warning-only rule violation"
+                if details:
+                    reason += f": {details}"
+                self.add_marker(pytest.mark.xfail(reason=reason, strict=False))
+                pytest.xfail(reason)
+            raise
+        except Exception as exc:
+            if self.policy == "warning":
+                reason = f"Warning-only rule error: {exc}"
+                self.add_marker(pytest.mark.xfail(reason=reason, strict=False))
+                pytest.xfail(reason)
+            raise
+
         if not isinstance(outcome, RuleResult):
             return
 
@@ -80,6 +110,18 @@ class ArchetypeItem(pytest.Item):
                 format_violation(violation) for violation in outcome.violations
             )
             reason = f"Warning-only rule violation: {details}"
+            self.add_marker(pytest.mark.xfail(reason=reason, strict=False))
+            pytest.xfail(reason)
+
+        if self.policy == "warning" and not outcome.passed:
+            details = "; ".join(
+                format_violation(violation) for violation in outcome.violations
+            )
+            reason = "Warning-only rule violation"
+            if details:
+                reason += f": {details}"
+            elif outcome.error is not None:
+                reason = f"Warning-only rule error: {outcome.error}"
             self.add_marker(pytest.mark.xfail(reason=reason, strict=False))
             pytest.xfail(reason)
 

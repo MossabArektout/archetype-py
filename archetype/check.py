@@ -342,6 +342,7 @@ def check(
     results = registry.run_all(
         group_filter=effective_group_filter,
         workers=effective_workers or 1,
+        rule_policies=config.rule_policies,
     )
     violation_counts = ViolationCounts(
         total=sum(len(result.violations) for result in results),

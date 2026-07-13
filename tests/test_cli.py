@@ -472,7 +472,13 @@ def test_cli_group_flag_passes_group_filter_to_registry_run_all(
 
     captured: dict[str, str | int | None] = {"group_filter": None, "workers": None}
 
-    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
+    def fake_run_all(
+        *,
+        group_filter: str | None = None,
+        workers: int = 1,
+        rule_policies=None,
+    ):
+        _ = rule_policies
         captured["group_filter"] = group_filter
         captured["workers"] = workers
         return []
@@ -537,7 +543,7 @@ def test_cli_no_cache_flag_passes_no_cache_to_load_project(
     monkeypatch.setattr("archetype.check.load_project", fake_load_project)
     monkeypatch.setattr(
         "archetype.check.registry.run_all",
-        lambda *, group_filter=None, workers=1: [],
+        lambda *, group_filter=None, workers=1, rule_policies=None: [],
     )
     runner = CliRunner()
 
@@ -569,7 +575,7 @@ def test_cli_exclude_flag_is_repeatable_and_passes_patterns_to_load_project(
     monkeypatch.setattr("archetype.check.load_project", fake_load_project)
     monkeypatch.setattr(
         "archetype.check.registry.run_all",
-        lambda *, group_filter=None, workers=1: [],
+        lambda *, group_filter=None, workers=1, rule_policies=None: [],
     )
     runner = CliRunner()
 
@@ -702,6 +708,9 @@ def test_cli_defaults_from_archetype_toml_are_applied(
                 'exclude = ["/vendor/"]',
                 "workers = 3",
                 "cache = false",
+                "",
+                "[rules]",
+                '"api-not-db" = "warning"',
             ]
         ),
         encoding="utf-8",
@@ -712,6 +721,7 @@ def test_cli_defaults_from_archetype_toml_are_applied(
         "workers": None,
         "no_cache": None,
         "exclude_patterns": None,
+        "rule_policies": None,
     }
 
     def fake_load_project(
@@ -724,9 +734,15 @@ def test_cli_defaults_from_archetype_toml_are_applied(
         captured["no_cache"] = no_cache
         captured["exclude_patterns"] = exclude_patterns
 
-    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
+    def fake_run_all(
+        *,
+        group_filter: str | None = None,
+        workers: int = 1,
+        rule_policies=None,
+    ):
         captured["group_filter"] = group_filter
         captured["workers"] = workers
+        captured["rule_policies"] = rule_policies
         return []
 
     monkeypatch.setattr("archetype.check.load_project", fake_load_project)
@@ -742,6 +758,7 @@ def test_cli_defaults_from_archetype_toml_are_applied(
     assert captured["workers"] == 3
     assert captured["no_cache"] is True
     assert captured["exclude_patterns"] == ["/vendor/"]
+    assert captured["rule_policies"] == {"api-not-db": "warning"}
 
 
 def test_cli_flags_override_archetype_toml_defaults(
@@ -780,7 +797,13 @@ def test_cli_flags_override_archetype_toml_defaults(
         captured["no_cache"] = no_cache
         captured["exclude_patterns"] = exclude_patterns
 
-    def fake_run_all(*, group_filter: str | None = None, workers: int = 1):
+    def fake_run_all(
+        *,
+        group_filter: str | None = None,
+        workers: int = 1,
+        rule_policies=None,
+    ):
+        _ = rule_policies
         captured["group_filter"] = group_filter
         captured["workers"] = workers
         return []
@@ -813,6 +836,82 @@ def test_cli_flags_override_archetype_toml_defaults(
     assert captured["workers"] == 2
     assert captured["no_cache"] is False
     assert captured["exclude_patterns"] == ["/migrations/"]
+
+
+def test_cli_rule_policy_warning_downgrades_failure_to_warning(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-not-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project_path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                'format = "json"',
+                "",
+                "[rules]",
+                '"api-not-db" = "warning"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["failed"] == 0
+    assert payload["summary"]["warned"] == 1
+    assert payload["rules"][0]["status"] == "warned"
+    assert payload["rules"][0]["policy"] == "warning"
+
+
+def test_cli_rule_policy_off_skips_rule_without_running_it(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import rule",
+                "",
+                "@rule('disabled-rule')",
+                "def _disabled_rule() -> None:",
+                "    raise RuntimeError('should not run')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project_path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                'format = "json"',
+                "",
+                '[rules."disabled-rule"]',
+                'policy = "off"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["skipped"] == 1
+    assert payload["rules"][0]["status"] == "off"
+    assert payload["rules"][0]["policy"] == "off"
+    assert payload["rules"][0]["violations"] == []
 
 
 def test_cli_quiet_flag_is_accepted(tmp_path: Path) -> None:

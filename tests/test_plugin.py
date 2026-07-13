@@ -100,6 +100,66 @@ def test_plugin_rule_failure_shows_violation_message(pytester) -> None:
     )
 
 
+def test_plugin_rule_policy_warning_reports_xfailed_test(pytester) -> None:
+    _write_simple_project(pytester.path)
+    (pytester.path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-not-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (pytester.path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                "[rules]",
+                '"api-not-db" = "warning"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = pytester.runpytest_inprocess("-q")
+
+    result.stdout.fnmatch_lines(["*1 xfailed*"])
+
+
+def test_plugin_rule_policy_off_reports_skipped_test(pytester) -> None:
+    _write_simple_project(pytester.path)
+    (pytester.path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import rule",
+                "",
+                "@rule('disabled-rule')",
+                "def _disabled_rule() -> None:",
+                "    raise RuntimeError('should not run')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (pytester.path / "archetype.toml").write_text(
+        "\n".join(
+            [
+                '[rules."disabled-rule"]',
+                'policy = "off"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = pytester.runpytest_inprocess("-q")
+
+    result.stdout.fnmatch_lines(["*1 skipped*"])
+
+
 def test_plugin_shows_allowed_set_summary_once_for_must_only_import_from(pytester) -> None:
     _write_simple_project(pytester.path)
     (pytester.path / "architecture.py").write_text(

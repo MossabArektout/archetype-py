@@ -176,6 +176,8 @@ def format_results(results: list[RuleResult], quiet: bool = False) -> str:
 
 
 def _result_status(result: RuleResult) -> str:
+    if result.policy == "off":
+        return "off"
     if result.skipped:
         return "skipped"
     if getattr(result, "timed_out", False):
@@ -231,6 +233,7 @@ def format_results_json(
                 "status": _result_status(result),
                 "group": result.group,
                 "since_date": result.since_date,
+                "policy": result.policy,
                 "violations": [
                     {
                         "module": violation.module,
