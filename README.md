@@ -5,171 +5,53 @@
 
 # archetype-py
 
-## Table of Contents
+Enforce architectural rules as code. Catch forbidden imports, layer leaks, cycles, and boundary violations before they merge.
 
-- [Overview](#overview)
-- [archetype-py Logo](#archetype-py-logo)
-- [Architecture Visuals](#architecture-visuals)
-- [Why Developers Use archetype-py](#why-developers-use-archetype-py)
-- [See It In Action](#see-it-in-action)
-- [Quick Start](#quick-start)
-- [Minimum `architecture.py` Example](#minimum-architecturepy-example)
-- [Features](#features)
-- [Decorators and Commands](#decorators-and-commands)
-- [Baseline Mode](#baseline-mode)
-- [Perfect For](#perfect-for)
-- [Installation](#installation)
-- [Build & Test](#build--test)
-- [Exit Codes](#exit-codes)
-- [Troubleshooting](#troubleshooting)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [Support The Project](#support-the-project)
-
-## Overview
-
-archetype-py is a Python architecture testing library that helps teams define structural rules as code and enforce them continuously. Instead of relying on conventions alone, you can codify boundaries such as layer direction, forbidden dependencies, module visibility, and cycle prevention, then run those checks locally, in CI, and in pytest. This keeps architecture decisions explicit, reviewable, and resilient as the codebase grows.
-
-## archetype-py Logo
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/MossabArektout/archetype-py/main/assets/logo.png" alt="archetype-py logo" width="280"/>
-</p>
-
-## Architecture Visuals
-
-### Architecture Diagram
-archetype-py lets teams define architecture rules like:
-
-- “API must not depend on infrastructure”
-- “No cycles between services”
-- “Only repositories can access the database”
-
-…and automatically enforce them in CI, locally, and in pytest.
-
-<p align="center">
-  <img src="./assets/architecture.png" alt="archetype-py high-level architecture diagram" width="900"/>
-</p>
-
-### Rule Execution Flow
-
-<p align="center">
-  <img src="./assets/Rule_Execution_Flow.png" alt="archetype-py rule execution flow diagram" width="900"/>
-</p>
-
-
-### Violation Lifecycle
-
-<p align="center">
-  <img src="./assets/Violation_Lifecycle.png" alt="archetype-py violation lifecycle diagram" width="900"/>
-</p>
-
-### CLI + CI Diagram
-
-<p align="center">
-  <img src="./assets/ci_integration.png" alt="archetype-py CLI and CI integration diagram" width="900"/>
-</p>
-
-### pytest Integration
-
-<p align="center">
-  <img src="./assets/Pytest.png" alt="archetype-py pytest integration diagram" width="900"/>
-</p>
-
----
-
-## Why Developers Use archetype-py
-
-Most Python tooling checks:
-
-- formatting
-- typing
-- linting
-- correctness
-
-But almost nothing protects **system structure**.
-
-As projects grow, architecture drifts silently:
-- layers start leaking
-- imports become tangled
-- boundaries disappear
-- coupling spreads
-
-archetype-py turns architectural intent into executable checks.
-
----
-
-## See It In Action
-
-### Define architecture rules
-
-```python
-from archetype import rule
-from archetype.rules import layers
-
-@rule("layers are ordered")
-def layer_order() -> None:
-    layers(["myapp.api", "myapp.services", "myapp.db"]).are_ordered()
-```
-
-### Run checks
-
-```bash
-archetype check .
-```
-
-### Get actionable feedback
-
-```text
-✖ API cannot depend on DB internals
-
-app.api.users
-└── imports app.db.internal.session
-```
-
----
+`archetype-py` builds a static import graph for your Python project, runs the rules you define in `architecture.py`, and reports the result in local terminals, CI, JSON output, and pytest.
 
 ## Quick Start
 
-### 1. Install
+Install the package:
 
 ```bash
 pip install archetype-py
 ```
 
-### 2. Generate a starter architecture file
+Generate a starter architecture file:
 
 ```bash
 archetype init .
 ```
 
-### 3. Define your rules
-
-Edit:
-
-```text
-architecture.py
-```
-
-### 4. Run checks
+Edit `architecture.py`, then run:
 
 ```bash
 archetype check .
 ```
 
-### 5. Add to CI
+For CI, add the same command:
 
 ```yaml
 - run: archetype check .
 ```
 
-Done.
+Requires Python 3.11+.
 
----
+## Why Archetype
 
-## Minimum `architecture.py` Example
+Most Python quality tools check formatting, typing, lint rules, and test behavior. They do not usually protect system structure.
 
-Use this as a starting point when creating or refining your rules file:
+As a codebase grows, architectural drift shows up as:
+
+- API modules importing database internals
+- domain code depending on infrastructure
+- services forming circular imports
+- internal modules being used from the wrong package
+- rules living only in team memory and code review comments
+
+Archetype turns those expectations into executable checks.
+
+## Minimal Example
 
 ```python
 from archetype import group, imports, rule, since, warn
@@ -180,14 +62,14 @@ with group("Layer boundaries"):
     def api_must_not_import_db() -> None:
         imports("myapp.api").must_not_import("myapp.db")
 
-@rule("db-warning-example")
+@rule("services-should-not-use-db-internals")
 @warn
-def db_warning_example() -> None:
+def services_should_not_use_db_internals() -> None:
     imports("myapp.services").must_not_import("myapp.db.internal")
 
-@rule("recent-violations-only")
+@rule("recent-code-must-not-use-legacy")
 @since("2026-01-01")
-def recent_violations_only() -> None:
+def recent_code_must_not_use_legacy() -> None:
     imports("myapp.api").must_not_import("myapp.legacy")
 
 @rule("no-import-cycles")
@@ -195,138 +77,121 @@ def no_import_cycles() -> None:
     no_cycles("myapp")
 ```
 
----
+Run the rules:
 
-## Features
-
-### Architecture Rules
-- Forbidden imports
-- Allowlisted imports
-- Layer enforcement
-- Import cycle detection
-- Protected module boundaries
-
-### Project Layout Support
-- Flat package layouts
-- Single `src/` layouts
-- Namespace packages (PEP 420, without `__init__.py`)
-- Monorepos with multiple `src` roots
-
-### Workflow Features
-- Rule grouping
-- Warning-level rules
-- Temporary rule skips with context
-- Changed-file enforcement (`since`)
-- Legacy baseline snapshot/suppression (`--write-baseline`, `--baseline`)
-- Diff-scoped checks (`--changed-from <ref>`)
-- Project diagnostics (`archetype doctor`)
-- Import graph export (`archetype graph --format mermaid|json`)
-- Unmatched pattern warnings with suggestions
-- First-class project config defaults (`archetype.toml`)
-- Path exclusions (`--exclude`, `archetype.toml`, legacy `[tool.archetype].exclude`)
-- Pytest integration
-- CI-friendly exit codes
-
-## Decorators and Commands
-
-Rules are written in `architecture.py` with decorators. Below are all decorator-style rule helpers currently available in this library.
-
-| Decorator / Helper | Purpose | Example |
-|---|---|---|
-| `@rule("name")` | Registers a rule with a human-readable display name. | `@rule("api-not-db")` |
-| `@warn` | Marks a rule as warning-only (does not fail exit code). | `@warn` |
-| `@skip` / `@skip(reason="...")` | Temporarily skips a rule, optionally with a reason shown in output. | `@skip(reason="Refactor in progress")` |
-| `@since("YYYY-MM-DD")` | Limits violations to files changed since a specific date. | `@since("2026-01-01")` |
-| `group("name")` | Context manager that assigns a group to enclosed rules (used with `--group`). | `with group("Layer boundaries"):` |
-
-Decorator order tip: place `@rule(...)` first, then wrappers like `@warn`, `@skip`, or `@since`.
-
-### `@since` Date Format
-
-`@since(...)` only accepts ISO calendar dates in `YYYY-MM-DD` format. The
-decorator validates this when `architecture.py` is loaded, so invalid values
-raise a clear `ValueError` instead of being ignored.
-
-```python
-@since("2026-01-01")  # valid
-def recent_violations_only() -> None:
-    ...
-
-@since("01-01-2026")  # invalid: expected YYYY-MM-DD
-def ambiguous_date() -> None:
-    ...
+```bash
+archetype check .
 ```
 
-Invalid dates show the expectation in the error message:
+Example output:
 
 ```text
-Invalid date '01-01-2026'. Expected format: YYYY-MM-DD.
+FAILED
+======
+  x api-must-not-import-db
+    - myapp/api/users.py:7
+        imports myapp.db.internal.session
+
+Summary: 0 passed, 1 failed, 0 warned, 0 skipped
 ```
 
-| Command | Description | Example |
+## Core Features
+
+- Forbidden import rules
+- Allowlisted import rules
+- Transitive dependency checks
+- Layer ordering rules
+- Import cycle detection
+- Protected internal module boundaries
+- Naming convention checks
+- Rule groups and targeted execution
+- Warning-only rules
+- Temporary skips with reasons
+- Date-scoped rules with `@since`
+- Baseline mode for legacy adoption
+- Changed-files mode for CI and large repositories
+- GitHub Actions inline PR annotations
+- Project diagnostics with `archetype doctor`
+- Import graph export with `archetype graph`
+- JSON and text report formats
+- Project defaults through `archetype.toml`
+- Path exclusions from CLI or config
+- Import graph caching
+- Pytest plugin support
+- Git pre-commit hook installer
+
+## Supported Layouts
+
+Archetype detects common Python project layouts:
+
+- flat packages, such as `myapp/`
+- single `src/` layouts, such as `src/myapp/`
+- namespace packages without `__init__.py`
+- monorepos with multiple nested `*/src` roots
+
+Use `archetype doctor .` to inspect what Archetype detected.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `archetype init [path]` | Generate a starter `architecture.py`. |
+| `archetype check [path]` | Load `architecture.py` and run all registered rules. |
+| `archetype check [path] --group <name>` | Run only rules in one group. |
+| `archetype check [path] --format json` | Emit machine-readable JSON report output. |
+| `archetype check [path] --quiet` | Show only failures and warnings. |
+| `archetype check [path] --exclude <pattern>` | Exclude paths from analysis and reporting. |
+| `archetype check [path] --changed-from <ref>` | Report only violations in Python files changed from a Git ref. |
+| `archetype check [path] --write-baseline <file>` | Write the current violations to a baseline file. |
+| `archetype check [path] --baseline <file>` | Suppress matching baseline violations. |
+| `archetype check [path] --github-annotations` | Emit GitHub Actions inline annotation commands. |
+| `archetype doctor [path]` | Explain detected project layout, graph, config, cache, and rule context. |
+| `archetype graph [path] --format mermaid\|json` | Export the discovered import graph. |
+| `archetype install-hook [path]` | Install or update a managed Git pre-commit hook. |
+
+## Rule Helpers
+
+Rules are plain Python functions registered with decorators.
+
+| Helper | Purpose | Example |
 |---|---|---|
-| `archetype init [path]` | Detects project structure and generates a starter `architecture.py` file. | `archetype init .` |
-| `archetype check [path]` | Loads `architecture.py` and runs all registered architecture rules. | `archetype check .` |
-| `archetype check [path] --group <name>` | Runs only rules that belong to the specified group. | `archetype check . --group core` |
-| `archetype check [path] --exclude <pattern>` | Excludes paths from analysis and reporting (repeatable). | `archetype check . --exclude /vendor/ --exclude /migrations/` |
-| `archetype check [path] --write-baseline <file> --baseline <file>` | Writes a baseline snapshot and suppresses matching legacy violations so only new ones fail. | `archetype check . --baseline archetype-baseline.json` |
-| `archetype check [path] --changed-from <ref>` | Limits reported violations to files changed since `<ref>` (branch name or commit SHA). | `archetype check . --changed-from origin/main` |
-| `archetype check [path] --github-annotations` | Emits GitHub Actions inline annotations (`::error`/`::warning`) for PR diffs. | `archetype check . --github-annotations` |
-| `archetype doctor [path]` | Shows detected layout, package roots, modules, import edges, config, cache status, and architecture file status. | `archetype doctor .` |
-| `archetype graph [path] --format mermaid\|json` | Exports the discovered local import graph for docs, debugging, or integrations. | `archetype graph . --format mermaid` |
-| `archetype install-hook [path]` | Installs (or updates) a managed git pre-commit hook that runs `archetype check` before each commit. | `archetype install-hook .` |
+| `@rule("name")` | Register a rule with a display name. | `@rule("api-not-db")` |
+| `@warn` | Report violations without failing the exit code. | `@warn` |
+| `@skip` / `@skip(reason="...")` | Temporarily skip a rule. | `@skip(reason="Refactor in progress")` |
+| `@since("YYYY-MM-DD")` | Only report violations in files modified after a date. | `@since("2026-01-01")` |
+| `group("name")` | Assign enclosed rules to a group. | `with group("Layer boundaries"):` |
 
-### Diagnostics
+Decorator order tip: write `@rule(...)` as the top decorator, above wrappers such as `@warn`, `@skip`, or `@since`.
 
-When a rule does not behave as expected, inspect what Archetype sees:
+```python
+@rule("warning-example")
+@warn
+def warning_example() -> None:
+    ...
+```
+
+## Diagnostics
+
+Use `doctor` when a rule does not behave as expected:
 
 ```bash
 archetype doctor .
 ```
 
-To inspect or document module dependencies, export the import graph:
+It reports detected layout, package roots, Python module count, import edge count, config source, excludes, cache status, detected layers, internal packages, and whether `architecture.py` exists.
+
+Export the import graph for debugging or documentation:
 
 ```bash
 archetype graph . --format mermaid
 archetype graph . --format json
 ```
 
-If a source, target, layer, boundary, cycle, or naming pattern matches no
-modules, Archetype reports a warning with likely suggestions instead of letting
-the rule silently pass.
+When a source, target, allowed, layer, boundary, cycle, or naming pattern matches no modules, Archetype reports a diagnostic warning with likely suggestions. This helps catch typos and stale rules instead of silently passing them.
 
-### Excluding Paths
+## Configuration
 
-Exclude noisy folders such as generated code, migrations, or vendored dependencies:
-
-```bash
-archetype check . --exclude /vendor/ --exclude /migrations/
-```
-
-You can also define defaults in `archetype.toml`:
-
-```toml
-exclude = ["/vendor/", "/migrations/"]
-```
-
-Legacy compatibility: if `archetype.toml` is missing, Archetype still reads
-`[tool.archetype]` from `pyproject.toml`.
-
-### Project Config (`archetype.toml`)
-
-Archetype auto-discovers `archetype.toml` in the project root passed to
-`archetype check [path]`.
-
-Supported defaults:
-
-- `format` (`"text"` or `"json"`)
-- `quiet` (`true`/`false`)
-- `group` (`string`)
-- `exclude` (`string` or `string[]`)
-- `workers` (`int >= 1`)
-- `cache` (`true`/`false`)
-
-Example:
+Archetype auto-discovers `archetype.toml` from the project root passed to `archetype check [path]`.
 
 ```toml
 format = "json"
@@ -337,108 +202,145 @@ workers = 4
 cache = true
 ```
 
+Supported defaults:
+
+- `format`: `"text"` or `"json"`
+- `quiet`: `true` or `false`
+- `group`: rule group name
+- `exclude`: string or list of strings
+- `workers`: integer greater than or equal to `1`
+- `cache`: `true` or `false`
+
 Precedence:
 
-- CLI flags override `archetype.toml`.
-- `archetype.toml` overrides built-in defaults.
-- If config is missing, behavior remains unchanged.
+1. CLI flags
+2. `archetype.toml`
+3. built-in defaults
 
-### Pre-commit Hook
+For compatibility, if `archetype.toml` is missing, Archetype still reads legacy `[tool.archetype]` settings from `pyproject.toml`.
 
-Install a git pre-commit hook in one command:
+## Path Exclusions
 
-```bash
-archetype install-hook .
-```
-
-Behavior:
-
-- Creates `.git/hooks/pre-commit` if missing.
-- Appends an Archetype-managed block if a custom pre-commit hook already exists.
-- Updates the managed block if Archetype already installed it.
-- Blocks the commit when `archetype check` fails, and prints violations directly in the commit terminal output.
-
-### Changed-files Mode
-
-Use diff scope to speed up checks in large repositories:
+Exclude generated code, vendored dependencies, migrations, or other noisy paths:
 
 ```bash
-archetype check . --changed-from origin/main
+archetype check . --exclude /vendor/ --exclude /migrations/
 ```
 
-`<ref>` can be a branch name (for example `origin/main`) or a commit SHA.
+Or define the defaults in `archetype.toml`:
 
-When enabled:
-- Text output shows a scope banner with mode, ref, and changed file count.
-- JSON output includes a `scope` object with mode/ref/file metadata.
-
-### GitHub PR Annotations
-
-Use GitHub Actions annotations to surface violations directly on PR diff lines:
-
-```bash
-archetype check . --github-annotations
+```toml
+exclude = ["/vendor/", "/migrations/"]
 ```
-
-In GitHub Actions, these appear as inline file/line annotations for each violation
-while preserving the normal non-zero exit code when checks fail.
 
 ## Baseline Mode
 
-Use baseline mode to adopt archetype in legacy repos without failing on pre-existing violations.
+Baseline mode lets you adopt Archetype in an existing codebase without failing CI on every old violation.
 
-Create a baseline snapshot:
+Create a baseline:
 
 ```bash
 archetype check . --write-baseline archetype-baseline.json
 ```
 
-Run checks against that baseline (matching old violations are suppressed):
+Run against that baseline:
 
 ```bash
 archetype check . --baseline archetype-baseline.json
 ```
 
-You can combine with JSON output to track counts:
+Matching old violations are suppressed. New blocking violations still fail with exit code `1`.
+
+## Changed-Files Mode
+
+Use diff scope for large projects or pull request checks:
 
 ```bash
-archetype check . --baseline archetype-baseline.json --format json
+archetype check . --changed-from origin/main
 ```
 
-JSON output includes:
-- `schema_version`: top-level contract version for machine consumers
-- `summary`: rule-level pass/fail/warn/skip counts
-- `violations.total`: total current violations before suppression
-- `violations.new`: violations not found in the baseline
-- `violations.suppressed`: violations matched and suppressed by baseline
+`<ref>` can be a branch name or commit SHA. Text output shows a scope banner, and JSON output includes a `scope` object with the changed file metadata.
 
-### JSON Contract (Versioned)
+## GitHub Actions
 
-Archetype JSON output is versioned for CI and other integrations.
+Basic CI:
 
-Current contract version:
+```yaml
+name: Architecture
 
-- `schema_version: 1`
+on:
+  pull_request:
+  push:
+    branches: [main]
 
-Versioning policy:
+jobs:
+  archetype:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install archetype-py
+      - run: archetype check .
+```
 
-- Non-breaking additions (for example new optional fields) keep the same `schema_version`.
-- Breaking shape changes (rename/remove/type changes) must increment `schema_version`.
-- Contract tests in CI enforce the current schema shape.
+Inline PR annotations:
 
-Field definitions:
+```yaml
+- run: archetype check . --github-annotations
+```
 
-- `schema_version` (`int`): machine-readable contract version.
-- `summary` (`object`): counts by rule status.
-- `violations` (`object`): aggregate violation counts.
-- `rules` (`array`): per-rule results with status and violations.
-- `scope` (`object`, optional): present when `--changed-from` is used.
+## Pytest
 
-Example (`--format json`):
+Archetype ships a pytest plugin. With the package installed, pytest can collect rules from `architecture.py` and report them as test items.
+
+```bash
+pytest
+```
+
+This is useful when architecture rules should live beside the rest of the test suite.
+
+## JSON Report Contract
+
+`archetype check --format json` emits a versioned report contract.
+
+Current report schema:
+
+```text
+schema_version: 2
+```
+
+Top-level fields:
+
+- `schema_version`: report contract version
+- `summary`: counts for passed, failed, warned, skipped, and total rules
+- `violations`: total, new, and baseline-suppressed violation counts
+- `rules`: per-rule results
+- `scope`: optional changed-files metadata when `--changed-from` is used
+
+Each rule includes:
+
+- `name`
+- `status`
+- `group`
+- `since_date`
+- `violations`
+- `diagnostics`
+
+Each violation includes:
+
+- `module`
+- `file`
+- `line`
+- `target`
+- `message`
+
+Example:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "summary": {
     "passed": 2,
     "failed": 1,
@@ -455,103 +357,125 @@ Example (`--format json`):
     {
       "name": "api-must-not-import-db",
       "status": "failed",
-      "group": "core",
+      "group": "Layer boundaries",
       "since_date": null,
       "violations": [
         {
-          "module": "simple_project.api",
-          "message": "Module 'simple_project.api' must not import 'simple_project.db'"
+          "module": "myapp.api.users",
+          "file": "myapp/api/users.py",
+          "line": 7,
+          "target": "myapp.db.internal.session",
+          "message": "Module 'myapp.api.users' must not import 'myapp.db' (found import to 'myapp.db.internal.session')."
         }
-      ]
+      ],
+      "diagnostics": []
     }
   ]
 }
 ```
 
-## Perfect For
+Non-breaking additions keep the same schema version. Breaking shape changes increment `schema_version`.
 
-- Growing Python monoliths
-- Modular backends
-- Clean Architecture projects
-- Hexagonal Architecture
-- Domain-driven design
-- Teams scaling beyond “tribal knowledge”
+Note: `archetype graph --format json` has its own graph export schema.
 
----
+## Import Graph Export
 
-## Installation
+Mermaid output is useful for docs:
 
 ```bash
-pip install archetype-py
+archetype graph . --format mermaid
 ```
 
-Requires Python 3.11+.
+```mermaid
+graph LR
+  m_myapp_api["myapp.api"]
+  m_myapp_services["myapp.services"]
+  m_myapp_db["myapp.db"]
+  m_myapp_api --> m_myapp_services
+  m_myapp_services --> m_myapp_db
+```
 
----
-
-## Build & Test
-
-For local development, install dev dependencies, run the test suite, and run architecture checks before opening a PR.
+JSON output is useful for integrations:
 
 ```bash
-pip install -e ".[dev]"
-pytest
-archetype check .
+archetype graph . --format json
 ```
 
+The graph export includes `nodes` and `edges`; each edge includes `source`, `target`, `file`, and `line`.
 
----
+## Architecture Visual
+
+<p align="center">
+  <img src="./assets/architecture.png" alt="archetype-py high-level architecture diagram" width="900"/>
+</p>
+
+Additional diagrams are available in [`assets/`](./assets).
 
 ## Exit Codes
 
-- `0`: no blocking failures (passes and warnings only)
-- `1`: one or more blocking rule failures
+- `0`: no blocking failures
+- `1`: one or more blocking failures
 
-When `--baseline` is used, exit code `1` means there are **new** blocking violations not present in the baseline.
+Warning-only rules do not fail the process. When `--baseline` is used, exit code `1` means there are new blocking violations not present in the baseline.
 
----
+## Development
+
+Install development dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+Run Archetype against itself:
+
+```bash
+archetype check .
+```
+
+Build the package:
+
+```bash
+hatch build
+```
 
 ## Troubleshooting
 
-- `Error: architecture.py not found`: run `archetype init .` in your project root, or pass the correct path to `archetype check <path>`.
-- Rules seem to do nothing: confirm your rules are decorated with `@rule("...")`; undecorated functions are not registered.
-- `@since(...)` behavior is unexpected: verify the date format is `YYYY-MM-DD` and that your git history is available in the checked path.
-- Import path mismatches: use fully qualified module paths (`myapp.api`, not file paths like `src/api.py`).
-- Namespace package imports not showing up: ensure modules live under discovered package roots (repo root, top-level `src/`, or nested monorepo `*/src` roots).
+`Error: architecture.py not found`
 
----
+Run `archetype init .` in your project root, or pass the correct path to `archetype check <path>`.
+
+Rules seem to do nothing
+
+Confirm the functions are decorated with `@rule("...")`. Undecorated functions are not registered.
+
+Pattern matches no modules
+
+Run `archetype doctor .`, then check that your patterns use fully qualified module names such as `myapp.api`, not file paths such as `src/api.py`.
+
+`@since(...)` behaves unexpectedly
+
+Use `YYYY-MM-DD` format and make sure Git history is available in the checked path.
+
+Imports are missing from the graph
+
+Check that modules live under detected package roots. `archetype doctor .` shows the roots Archetype is using.
 
 ## Roadmap
 
-Planned improvements include:
-- Graph visualization
-- Architecture diffing
-- IDE integrations
-- Rich HTML reports
-- More built-in rule primitives
-
----
+See [`ROADMAP.md`](./ROADMAP.md) for planned work.
 
 ## Contributing
 
-Contributions are welcome:
-- bug fixes
-- rule ideas
-- docs improvements
-- integrations
-- performance work
+Contributions are welcome: bug fixes, rule ideas, documentation improvements, integrations, and performance work.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
----
+## License
 
-## Support The Project
-
-If archetype-py helps your team:
-
-⭐ Star the repository  
-🐛 Open issues  
-🧠 Share feedback  
-🔧 Contribute improvements
-
-Every star genuinely helps the project grow.
+MIT. See [`LICENSE`](./LICENSE).
