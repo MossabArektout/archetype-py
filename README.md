@@ -140,6 +140,7 @@ Use `archetype doctor .` to inspect what Archetype detected.
 | `archetype check [path] --group <name>` | Run only rules in one group. |
 | `archetype check [path] --format json` | Emit machine-readable JSON report output. |
 | `archetype check [path] --quiet` | Show only failures and warnings. |
+| `archetype check [path] --no-cache` | Force a fresh import graph rebuild. |
 | `archetype check [path] --exclude <pattern>` | Exclude paths from analysis and reporting. |
 | `archetype check [path] --changed-from <ref>` | Report only violations in Python files changed from a Git ref. |
 | `archetype check [path] --write-baseline <file>` | Write the current violations to a baseline file. |
@@ -148,6 +149,22 @@ Use `archetype doctor .` to inspect what Archetype detected.
 | `archetype doctor [path]` | Explain detected project layout, graph, config, cache, and rule context. |
 | `archetype graph [path] --format mermaid\|json` | Export the discovered import graph. |
 | `archetype install-hook [path]` | Install or update a managed Git pre-commit hook. |
+
+Common check flag examples:
+
+```bash
+# Run only rules in one group
+archetype check . --group "Layer boundaries"
+
+# Emit machine-readable JSON
+archetype check . --format json
+
+# Show only failures and warnings
+archetype check . --quiet
+
+# Ignore the import graph cache and rebuild from source
+archetype check . --no-cache
+```
 
 ## Rule Helpers
 
