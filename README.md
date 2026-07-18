@@ -95,6 +95,10 @@ FAILED
 Summary: 0 passed, 1 failed, 0 warned, 0 skipped
 ```
 
+## Examples
+
+- [`examples/fastapi/`](./examples/fastapi/) — a layered FastAPI-style project (`api` / `services` / `repositories` / `db`) with `layers(...)`, `imports(...).must_not_import(...)`, and `no_cycles(...)` rules.
+
 ## Core Features
 
 - Forbidden import rules
