@@ -6,6 +6,7 @@ from collections.abc import Mapping
 import re
 from collections import OrderedDict
 from pathlib import Path
+from urllib.parse import quote
 
 from rich.console import Console
 
@@ -13,6 +14,8 @@ from archetype.baseline import ViolationCounts
 from archetype.analysis.models import RuleResult, Violation
 
 JSON_SCHEMA_VERSION = 2
+SARIF_SCHEMA_URI = "https://json.schemastore.org/sarif-2.1.0.json"
+SARIF_VERSION = "2.1.0"
 
 
 def _extract_target(violation: Violation) -> str:
@@ -254,6 +257,153 @@ def format_results_json(
     if scope is not None:
         payload["scope"] = dict(scope)
     return payload
+
+
+def _sarif_level(result: RuleResult) -> str:
+    if result.policy == "off" or result.skipped:
+        return "none"
+    if result.warned or result.is_warning or result.policy == "warning":
+        return "warning"
+    return "error"
+
+
+def _sarif_rule_properties(result: RuleResult) -> dict[str, object]:
+    properties: dict[str, object] = {
+        "severity": _sarif_level(result),
+        "policy": result.policy,
+        "tags": ["architecture"],
+    }
+    if result.group is not None:
+        properties["group"] = result.group
+    if result.since_date is not None:
+        properties["since_date"] = result.since_date
+    return properties
+
+
+def _sarif_rule(result: RuleResult) -> dict[str, object]:
+    description = f"Archetype architecture rule '{result.name}'."
+    if result.group is not None:
+        description += f" Group: {result.group}."
+
+    return {
+        "id": result.name,
+        "name": result.name,
+        "shortDescription": {"text": result.name},
+        "fullDescription": {"text": description},
+        "defaultConfiguration": {"level": _sarif_level(result)},
+        "properties": _sarif_rule_properties(result),
+    }
+
+
+def _sarif_artifact_uri(violation: Violation, project_root: Path) -> str | None:
+    if str(violation.file) in {"", "<unknown>"}:
+        return None
+
+    raw_file = Path(violation.file)
+    file_path = raw_file.resolve() if raw_file.is_absolute() else raw_file
+    resolved_root = project_root.resolve()
+
+    if file_path.is_absolute():
+        try:
+            file_path = file_path.relative_to(resolved_root)
+        except ValueError:
+            pass
+
+    return quote(file_path.as_posix(), safe="/._-~")
+
+
+def _sarif_location(
+    violation: Violation,
+    *,
+    project_root: Path,
+) -> dict[str, object] | None:
+    artifact_uri = _sarif_artifact_uri(violation, project_root)
+    if artifact_uri is None:
+        return None
+
+    physical_location: dict[str, object] = {
+        "artifactLocation": {"uri": artifact_uri},
+    }
+    if violation.line > 0:
+        physical_location["region"] = {"startLine": violation.line}
+
+    return {
+        "physicalLocation": physical_location,
+        "logicalLocations": [
+            {
+                "fullyQualifiedName": violation.module,
+                "kind": "module",
+            }
+        ],
+    }
+
+
+def _sarif_result_properties(
+    result: RuleResult,
+    violation: Violation,
+) -> dict[str, object]:
+    properties: dict[str, object] = {
+        "module": violation.module,
+        "target": _extract_target(violation),
+    }
+    if result.group is not None:
+        properties["group"] = result.group
+    return properties
+
+
+def format_results_sarif(
+    results: list[RuleResult],
+    *,
+    project_root: Path,
+    scope: Mapping[str, object] | None = None,
+) -> Mapping[str, object]:
+    """Build a SARIF 2.1.0 report for rule execution results."""
+    rule_index_by_id: dict[str, int] = {}
+    rules: list[dict[str, object]] = []
+
+    for result in results:
+        if result.name in rule_index_by_id:
+            continue
+        rule_index_by_id[result.name] = len(rules)
+        rules.append(_sarif_rule(result))
+
+    sarif_results: list[dict[str, object]] = []
+    for result in results:
+        if result.skipped or result.passed:
+            continue
+
+        for violation in result.violations:
+            sarif_result: dict[str, object] = {
+                "ruleId": result.name,
+                "ruleIndex": rule_index_by_id[result.name],
+                "level": _sarif_level(result),
+                "kind": "fail",
+                "message": {"text": f"{result.name}: {violation.message}"},
+                "properties": _sarif_result_properties(result, violation),
+            }
+            location = _sarif_location(violation, project_root=project_root)
+            if location is not None:
+                sarif_result["locations"] = [location]
+            sarif_results.append(sarif_result)
+
+    run: dict[str, object] = {
+        "tool": {
+            "driver": {
+                "name": "archetype-py",
+                "informationUri": "https://github.com/MossabArektout/archetype-py",
+                "rules": rules,
+            }
+        },
+        "results": sarif_results,
+    }
+    if scope is not None:
+        run["properties"] = {"scope": dict(scope)}
+
+    return {
+        "$schema": SARIF_SCHEMA_URI,
+        "version": SARIF_VERSION,
+        "runs": [run],
+    }
 
 
 def _github_escape_data(value: str) -> str:

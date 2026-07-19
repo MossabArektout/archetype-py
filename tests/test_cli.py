@@ -761,6 +761,28 @@ def test_cli_defaults_from_archetype_toml_are_applied(
     assert captured["rule_policies"] == {"api-not-db": "warning"}
 
 
+def test_cli_defaults_from_archetype_toml_accept_sarif_format(
+    tmp_path: Path,
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "from archetype import rule\n",
+        encoding="utf-8",
+    )
+    (project_path / "archetype.toml").write_text(
+        'format = "sarif"',
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["version"] == "2.1.0"
+    assert payload["runs"][0]["results"] == []
+
+
 def test_cli_flags_override_archetype_toml_defaults(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -976,6 +998,42 @@ def test_cli_format_json_outputs_parseable_json(tmp_path: Path) -> None:
     assert "summary" in payload
     assert "violations" in payload
     assert "rules" in payload
+
+
+def test_cli_format_sarif_outputs_parseable_sarif(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path), "--format", "sarif"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["version"] == "2.1.0"
+    run = payload["runs"][0]
+    assert run["tool"]["driver"]["rules"][0]["id"] == "api-must-not-import-db"
+    sarif_result = run["results"][0]
+    assert sarif_result["ruleId"] == "api-must-not-import-db"
+    assert sarif_result["level"] == "error"
+    assert sarif_result["message"]["text"].startswith(
+        "api-must-not-import-db: Module 'simple_project.api' must not import"
+    )
+    assert sarif_result["locations"][0]["physicalLocation"] == {
+        "artifactLocation": {"uri": "simple_project/api.py"},
+        "region": {"startLine": 7},
+    }
 
 
 def test_cli_format_json_summary_counts_are_correct(tmp_path: Path) -> None:
