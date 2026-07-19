@@ -1514,6 +1514,56 @@ def test_cli_changed_from_json_includes_scope_metadata(
     }
 
 
+def test_cli_changed_from_json_violation_counts_reflect_scoped_results(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    monkeypatch.setattr(
+        "archetype.check.get_files_changed_from",
+        lambda *_args, **_kwargs: set(),
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "check",
+            str(project_path),
+            "--changed-from",
+            "origin/main",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"] == {
+        "passed": 1,
+        "failed": 0,
+        "warned": 0,
+        "skipped": 0,
+        "total": 1,
+    }
+    assert payload["violations"] == {"total": 0, "new": 0, "suppressed": 0}
+    assert payload["rules"][0]["status"] == "passed"
+    assert payload["rules"][0]["violations"] == []
+
+
 def test_cli_changed_from_scope_ignores_excluded_paths(
     tmp_path: Path, monkeypatch
 ) -> None:

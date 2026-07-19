@@ -132,27 +132,45 @@ def _scope_results_to_changed_files(
     project_root: Path,
 ) -> None:
     resolved_root = project_root.resolve()
+
+    def is_changed(violation_file: Path) -> bool:
+        violation_path = (
+            (resolved_root / violation_file).resolve()
+            if not violation_file.is_absolute()
+            else violation_file.resolve()
+        )
+        return violation_path in changed_files
+
     for result in results:
         if result.skipped or result.error is not None:
             continue
-        if not result.violations:
+        if not result.violations and not result.suppressed_violations:
             continue
 
-        scoped = []
-        for violation in result.violations:
-            violation_file = Path(violation.file)
-            violation_path = (
-                (resolved_root / violation_file).resolve()
-                if not violation_file.is_absolute()
-                else violation_file.resolve()
-            )
-            if violation_path in changed_files:
-                scoped.append(violation)
-
-        result.violations = scoped
-        if not scoped:
+        result.violations = [
+            violation
+            for violation in result.violations
+            if is_changed(Path(violation.file))
+        ]
+        result.suppressed_violations = [
+            violation
+            for violation in result.suppressed_violations
+            if is_changed(Path(violation.file))
+        ]
+        if not result.violations:
             result.passed = True
             result.warned = False
+
+
+def _count_violations(results: list[RuleResult]) -> ViolationCounts:
+    total = 0
+    suppressed = 0
+    for result in results:
+        if result.skipped or result.error is not None:
+            continue
+        total += len(result.violations) + len(result.suppressed_violations)
+        suppressed += len(result.suppressed_violations)
+    return ViolationCounts(total=total, new=total - suppressed, suppressed=suppressed)
 
 
 @click.group()
@@ -345,11 +363,7 @@ def check(
         workers=effective_workers or 1,
         rule_policies=config.rule_policies,
     )
-    violation_counts = ViolationCounts(
-        total=sum(len(result.violations) for result in results),
-        new=sum(len(result.violations) for result in results),
-        suppressed=0,
-    )
+    violation_counts = _count_violations(results)
 
     if write_baseline_path is not None:
         payload = build_baseline_payload(results, project_root=project_path)
@@ -393,6 +407,7 @@ def check(
             changed_files=changed_files,
             project_root=project_path,
         )
+        violation_counts = _count_violations(results)
         scope_metadata = {
             "mode": "changed-files",
             "changed_from": changed_from,
