@@ -128,9 +128,9 @@ def _parse_check_config(
 
     if "format" in check_cfg:
         format_value = _ensure_str(check_cfg["format"], field="format", source=scope)
-        if format_value not in {"text", "json"}:
+        if format_value not in {"text", "json", "sarif"}:
             raise ValueError(
-                f"Invalid {scope} 'format': expected 'text' or 'json'."
+                f"Invalid {scope} 'format': expected 'text', 'json', or 'sarif'."
             )
         output_format = format_value
 

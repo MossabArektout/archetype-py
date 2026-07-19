@@ -43,6 +43,7 @@ from archetype.analysis.models import RuleResult
 from archetype.reporter import (
     format_github_annotations,
     format_results_json,
+    format_results_sarif,
     print_results,
 )
 from archetype.rule import registry
@@ -191,7 +192,7 @@ def cli() -> None:
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["text", "json"]),
+    type=click.Choice(["text", "json", "sarif"]),
     default="text",
     show_default=True,
     help="Output format.",
@@ -412,6 +413,18 @@ def check(
                 format_results_json(
                     results,
                     violation_counts=violation_counts,
+                    scope=scope_metadata,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    elif effective_output_format == "sarif":
+        click.echo(
+            json.dumps(
+                format_results_sarif(
+                    results,
+                    project_root=project_path,
                     scope=scope_metadata,
                 ),
                 ensure_ascii=False,

@@ -9,9 +9,12 @@ import pytest
 from archetype.analysis.models import RuleResult, Violation
 from archetype.reporter import (
     JSON_SCHEMA_VERSION,
+    SARIF_SCHEMA_URI,
+    SARIF_VERSION,
     format_github_annotations,
     format_results,
     format_results_json,
+    format_results_sarif,
     print_results,
 )
 
@@ -239,6 +242,80 @@ def test_format_results_json_reports_warning_and_off_policy_statuses() -> None:
     assert payload["rules"][0]["policy"] == "warning"
     assert payload["rules"][1]["status"] == "off"
     assert payload["rules"][1]["policy"] == "off"
+
+
+def test_format_results_sarif_contract_shape_is_stable() -> None:
+    results = [
+        RuleResult(name="pass-rule", passed=True),
+        RuleResult(
+            name="fail-rule",
+            passed=False,
+            group="core",
+            since_date="2026-01-01",
+            violations=[_violation()],
+        ),
+        RuleResult(
+            name="warn-rule",
+            passed=False,
+            violations=[_violation()],
+            warned=True,
+            is_warning=True,
+            policy="warning",
+        ),
+    ]
+
+    payload = format_results_sarif(results, project_root=Path.cwd())
+
+    assert payload["$schema"] == SARIF_SCHEMA_URI
+    assert payload["version"] == SARIF_VERSION
+    run = payload["runs"][0]
+    driver = run["tool"]["driver"]
+    assert driver["name"] == "archetype-py"
+    assert [rule["id"] for rule in driver["rules"]] == [
+        "pass-rule",
+        "fail-rule",
+        "warn-rule",
+    ]
+    fail_rule = driver["rules"][1]
+    assert fail_rule["name"] == "fail-rule"
+    assert fail_rule["defaultConfiguration"]["level"] == "error"
+    assert fail_rule["properties"] == {
+        "severity": "error",
+        "policy": "error",
+        "tags": ["architecture"],
+        "group": "core",
+        "since_date": "2026-01-01",
+    }
+
+    sarif_results = run["results"]
+    assert len(sarif_results) == 2
+    assert sarif_results[0]["ruleId"] == "fail-rule"
+    assert sarif_results[0]["ruleIndex"] == 1
+    assert sarif_results[0]["level"] == "error"
+    assert sarif_results[0]["message"] == {
+        "text": "fail-rule: Module 'simple_project.api' must not import 'simple_project.db'"
+    }
+    assert sarif_results[0]["locations"] == [
+        {
+            "physicalLocation": {
+                "artifactLocation": {"uri": "simple_project/api.py"},
+                "region": {"startLine": 1},
+            },
+            "logicalLocations": [
+                {
+                    "fullyQualifiedName": "simple_project.api",
+                    "kind": "module",
+                }
+            ],
+        }
+    ]
+    assert sarif_results[0]["properties"] == {
+        "module": "simple_project.api",
+        "target": "simple_project.db",
+        "group": "core",
+    }
+    assert sarif_results[1]["ruleId"] == "warn-rule"
+    assert sarif_results[1]["level"] == "warning"
 
 
 def test_format_github_annotations_emits_error_and_warning_commands() -> None:
