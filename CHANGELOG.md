@@ -12,6 +12,9 @@
 - Added a FastAPI example under `examples/fastapi/` with a realistic
   `architecture.py` covering layer ordering, forbidden imports, and cycle
   detection. (#71)
+- Documented the built-in `archetype install-hook` pre-commit hook, including
+  verification steps, `PATH` requirements, and coexistence with existing
+  hooks. (#76)
 
 ## 0.4.0 - 2026-07-05
 
