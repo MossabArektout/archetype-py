@@ -5,7 +5,11 @@ from pathlib import Path
 
 import archetype.dsl.query as query_module
 from archetype.analysis.cache import ensure_gitignore_entry, get_cache_path
-from archetype.analysis.imports import build_import_graph, discover_package_roots
+from archetype.analysis.imports import (
+    ImportGraphBuildError,
+    build_import_graph,
+    discover_package_roots,
+)
 
 
 def _fixture_root() -> Path:
@@ -91,6 +95,43 @@ def test_graph_stores_absolute_source_file_path_on_edge() -> None:
     assert edge_data is not None
     assert Path(edge_data["file"]).is_absolute()
     assert Path(edge_data["file"]) == expected_file
+
+
+def test_build_import_graph_reports_invalid_python_source(tmp_path: Path) -> None:
+    package = tmp_path / "app"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    invalid_file = package / "broken.py"
+    invalid_file.write_text("def broken(:\n    pass\n", encoding="utf-8")
+
+    try:
+        build_import_graph(tmp_path)
+    except ImportGraphBuildError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected invalid Python source to fail graph building.")
+
+    assert f"failed to parse {invalid_file}" in message
+    assert "invalid syntax" in message
+    assert "line 1" in message
+
+
+def test_build_import_graph_reports_invalid_file_encoding(tmp_path: Path) -> None:
+    package = tmp_path / "app"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    unreadable_file = package / "bad_encoding.py"
+    unreadable_file.write_bytes(b"\xff")
+
+    try:
+        build_import_graph(tmp_path)
+    except ImportGraphBuildError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected invalid file encoding to fail graph building.")
+
+    assert f"failed to read {unreadable_file}" in message
+    assert "utf-8" in message
 
 
 def test_graph_supports_namespace_package_without_init_files() -> None:
