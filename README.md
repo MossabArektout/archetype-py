@@ -86,17 +86,107 @@ archetype check .
 Example output:
 
 ```text
-FAILED
-======
-  x api-must-not-import-db
+General
+=======
+  ⚠ services-should-not-use-db-internals
+    - myapp/services/reports.py:1
+        imports myapp.db.internal.session
+  ✓ recent-code-must-not-use-legacy (since 2026-01-01)
+  ✓ no-import-cycles
+  2 passed, 0 failed
+
+Layer boundaries
+================
+  ✗ api-must-not-import-db
     - myapp/api/users.py:7
         imports myapp.db.internal.session
-
-Summary: 0 passed, 1 failed, 0 warned, 0 skipped
+  0 passed, 1 failed
+Summary: 2 passed, 1 failed, 1 warned, 0 skipped, 4 total rules.
 ```
+
+Rules are reported under their group, with rules outside any `group()` block
+collected under `General`. See [Example Output](#example-output) for passing,
+failing, and warning runs side by side.
 
 For a fuller rule file covering a layered FastAPI project (api, services,
 repositories, db), see [`examples/fastapi/`](./examples/fastapi).
+
+## Example Output
+
+What Archetype prints for the three outcomes you will actually see.
+
+### A passing run
+
+Every rule holds. Each group reports its own tally, and the run exits `0`:
+
+```text
+Boundaries
+==========
+  ✓ api-must-not-import-db
+  ✓ services-must-not-import-api
+  2 passed, 0 failed
+
+Cycles
+======
+  ✓ no-import-cycles
+  1 passed, 0 failed
+
+Internals
+=========
+  ✓ internal-helpers-stay-private
+  1 passed, 0 failed
+Summary: 4 passed, 0 failed, 0 warned, 0 skipped, 4 total rules.
+```
+
+### A failing run
+
+Each violation names the file and line of the offending import, and the
+module it resolved to. The run exits `1`:
+
+```text
+Boundaries
+==========
+  ✗ api-must-not-import-db
+    - myapp/api/routes.py:2
+        imports myapp.db.session
+  ✓ services-must-not-import-api
+  1 passed, 1 failed
+
+Cycles
+======
+  ✓ no-import-cycles
+  1 passed, 0 failed
+
+Internals
+=========
+  ✗ internal-helpers-stay-private
+    - myapp/services/reports.py:1
+        imports myapp.core.internal.helpers
+  0 passed, 1 failed
+Summary: 2 passed, 2 failed, 0 warned, 0 skipped, 4 total rules.
+```
+
+`myapp/api/routes.py:2` is the exact import to remove, so the output can be
+pasted into an editor or clicked in a terminal that linkifies paths.
+
+### A warning run
+
+A rule whose pattern matches no modules is reported as a warning rather than
+a silent pass, with suggestions from the modules Archetype did find. This is
+usually a typo or a pattern left behind after a rename:
+
+```text
+Boundaries
+==========
+  ⚠ controllers-must-not-import-db
+    Source pattern 'myapp.controllers' matched 0 modules. Did you mean: myapp.core, myapp.core.internal.helpers, myapp.core.internal?
+  0 passed, 0 failed
+Summary: 0 passed, 0 failed, 1 warned, 0 skipped, 1 total rules.
+```
+
+Warnings do not fail the run — this example exits `0`. See
+[Diagnostics](#diagnostics) for the patterns that are checked, and
+[Exit Codes](#exit-codes) for the full list.
 
 ## Core Features
 

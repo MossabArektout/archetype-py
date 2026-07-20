@@ -12,6 +12,9 @@
 - Added a FastAPI example under `examples/fastapi/` with a realistic
   `architecture.py` covering layer ordering, forbidden imports, and cycle
   detection. (#71)
+- Added an Example Output section showing passing, failing, and unmatched
+  pattern warning runs, and corrected the stale sample output in the Minimal
+  Example section. (#77)
 
 ## 0.4.0 - 2026-07-05
 
