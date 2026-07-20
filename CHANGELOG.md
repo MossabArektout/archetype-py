@@ -12,6 +12,8 @@
 - Added a FastAPI example under `examples/fastapi/` with a realistic
   `architecture.py` covering layer ordering, forbidden imports, and cycle
   detection. (#71)
+- Added `docs/recipes.md` with copy-paste rules for forbidden layer imports,
+  import cycles, and protected internal modules, linked from the README. (#75)
 
 ## 0.4.0 - 2026-07-05
 
