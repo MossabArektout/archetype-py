@@ -95,6 +95,10 @@ FAILED
 Summary: 0 passed, 1 failed, 0 warned, 0 skipped
 ```
 
+For copy-paste rules covering the most common checks — API must not import the
+database, services must not import the API, no import cycles, and protected
+internal modules — see [Common Rule Recipes](./docs/recipes.md).
+
 For a fuller rule file covering a layered FastAPI project (api, services,
 repositories, db), see [`examples/fastapi/`](./examples/fastapi).
 
