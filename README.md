@@ -152,7 +152,7 @@ Use `archetype doctor .` to inspect what Archetype detected.
 | `archetype check [path] --github-annotations` | Emit GitHub Actions inline annotation commands. |
 | `archetype doctor [path]` | Explain detected project layout, graph, config, cache, and rule context. |
 | `archetype graph [path] --format mermaid\|json` | Export the discovered import graph. |
-| `archetype install-hook [path]` | Install or update a managed Git pre-commit hook. |
+| `archetype install-hook [path]` | Install or update a managed Git pre-commit hook. See [Pre-commit Hook](#pre-commit-hook). |
 
 Common check flag examples:
 
@@ -327,6 +327,81 @@ Inline PR annotations:
 
 ```yaml
 - run: archetype check . --github-annotations
+```
+
+## Pre-commit Hook
+
+Archetype can install a managed Git pre-commit hook so violations are caught before a commit is created, not after it reaches CI.
+
+```bash
+archetype install-hook .
+```
+
+```
+Installed pre-commit hook at /path/to/project/.git/hooks/pre-commit
+Hook command: archetype check /path/to/project
+```
+
+The hook is written to the repository's `pre-commit` hook path and made executable. The installed block runs `archetype check` against the repository root, so every commit is checked against the full project, not only the staged files.
+
+### Verifying the hook
+
+Make a commit. A clean project reports its summary and the commit proceeds:
+
+```
+$ git commit -m "add service layer"
+Summary: 1 passed, 0 failed, 0 warned, 0 skipped, 1 total rules.
+[main 1a2b3c4] add service layer
+```
+
+A commit that breaks a rule prints the violation and is rejected:
+
+```
+$ git commit -m "add cycle"
+Cycles
+======
+  ✗ no-cycles
+    - myapp/a.py:1
+        imports <unknown>
+  0 passed, 1 failed
+Summary: 0 passed, 1 failed, 0 warned, 0 skipped, 1 total rules.
+```
+
+The commit is not created. Use `git commit --no-verify` to bypass the hook deliberately.
+
+### Requirements and behaviour
+
+`archetype` must be available on `PATH` for the hook to run. The hook checks this first and fails the commit with a clear message rather than passing silently:
+
+```
+archetype: CLI not found on PATH. Install archetype to run checks.
+```
+
+If you install Archetype into a virtualenv, that environment must be active when you commit, or Git tools that run outside it will not find the CLI.
+
+The command is safe to re-run and reports what it did:
+
+| Situation | Result |
+| --- | --- |
+| No hook present | `Installed pre-commit hook at ...` |
+| Archetype block already current | `Archetype pre-commit hook already installed at ...` |
+| Archetype block present but outdated | `Updated Archetype block in pre-commit hook at ...` |
+| Some other hook already present | `Appended Archetype block to existing pre-commit hook at ...` |
+
+Archetype only owns the region between its markers, so an existing hook is preserved:
+
+```sh
+# >>> archetype pre-commit hook >>>
+...
+# <<< archetype pre-commit hook <<<
+```
+
+Because the block is appended, an existing hook that exits before reaching it will prevent the Archetype check from running. If your hook ends with an explicit `exit`, move the Archetype block above it.
+
+To uninstall, delete that block from `.git/hooks/pre-commit` (or delete the file if Archetype is its only content). Running the command outside a Git repository exits with status `1`:
+
+```
+Error: Unable to resolve git hooks path: fatal: not a git repository (or any of the parent directories): .git
 ```
 
 ## Pytest
