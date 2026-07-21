@@ -9,9 +9,9 @@
 ### Documentation
 - Documented current `archetype check` flags, including `--group`,
   `--format json`, `--quiet`, and `--no-cache` examples. (#42)
-- Added a FastAPI example under `examples/fastapi/` with a realistic
-  `architecture.py` covering layer ordering, forbidden imports, and cycle
-  detection. (#71)
+- Added `examples/django/`, a worked Django example covering app
+  boundaries, views/services/models layering, and internal-module
+  protection, linked from the README. (#72)
 
 ## 0.4.0 - 2026-07-05
 

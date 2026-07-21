@@ -95,8 +95,17 @@ FAILED
 Summary: 0 passed, 1 failed, 0 warned, 0 skipped
 ```
 
-For a fuller rule file covering a layered FastAPI project (api, services,
-repositories, db), see [`examples/fastapi/`](./examples/fastapi).
+## Examples
+
+Worked examples of Archetype applied to a full project shape, beyond the
+minimal snippet above:
+
+- [`examples/django/`](./examples/django) -- a two-app Django project
+  (`users`, `billing`) with rules covering app boundaries, layering across
+  models/services/views, and keeping database internals out of the HTTP
+  layer. See [`examples/django/README.md`](./examples/django/README.md)
+  for the full walkthrough, including sample output for both a passing run
+  and a caught violation.
 
 ## Core Features
 
@@ -116,7 +125,7 @@ repositories, db), see [`examples/fastapi/`](./examples/fastapi).
 - GitHub Actions inline PR annotations
 - Project diagnostics with `archetype doctor`
 - Import graph export with `archetype graph`
-- Text, JSON, and SARIF report formats
+- JSON and text report formats
 - Project defaults through `archetype.toml`
 - Path exclusions from CLI or config
 - Import graph caching
@@ -142,7 +151,6 @@ Use `archetype doctor .` to inspect what Archetype detected.
 | `archetype check [path]` | Load `architecture.py` and run all registered rules. |
 | `archetype check [path] --group <name>` | Run only rules in one group. |
 | `archetype check [path] --format json` | Emit machine-readable JSON report output. |
-| `archetype check [path] --format sarif` | Emit SARIF 2.1.0 output for code scanning integrations. |
 | `archetype check [path] --quiet` | Show only failures and warnings. |
 | `archetype check [path] --no-cache` | Force a fresh import graph rebuild. |
 | `archetype check [path] --exclude <pattern>` | Exclude paths from analysis and reporting. |
@@ -162,9 +170,6 @@ archetype check . --group "Layer boundaries"
 
 # Emit machine-readable JSON
 archetype check . --format json
-
-# Emit SARIF for code scanning integrations
-archetype check . --format sarif > archetype.sarif
 
 # Show only failures and warnings
 archetype check . --quiet
@@ -234,7 +239,7 @@ policy = "off"
 
 Supported defaults:
 
-- `format`: `"text"`, `"json"`, or `"sarif"`
+- `format`: `"text"` or `"json"`
 - `quiet`: `true` or `false`
 - `group`: rule group name
 - `exclude`: string or list of strings
@@ -417,16 +422,6 @@ Example:
 Non-breaking additions keep the same schema version. Breaking shape changes increment `schema_version`.
 
 Note: `archetype graph --format json` has its own graph export schema.
-
-## SARIF Output
-
-`archetype check --format sarif` emits SARIF 2.1.0 JSON for GitHub Code Scanning and other SARIF-compatible tools.
-
-```bash
-archetype check . --format sarif > archetype.sarif
-```
-
-Each Archetype rule is emitted as a SARIF rule descriptor using the rule name as the stable `ruleId`. Each violation is emitted as a SARIF result with a readable message, severity level, source module, imported target, and file/line location when available.
 
 ## Import Graph Export
 
