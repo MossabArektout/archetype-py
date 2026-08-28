@@ -30,6 +30,7 @@ class RuleResult:
     skip_reason: str | None = None
     group: str | None = None
     since_date: str | None = None
+    escalate_date: str | None = None
     policy: str = "error"
     timed_out: bool = False
     timeout_seconds: float | None = None

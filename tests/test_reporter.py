@@ -145,6 +145,20 @@ def test_reporter_default_mode_still_shows_passing_and_skipped(
     assert "skipped-rule" in output
 
 
+def test_format_rule_name_shows_escalate_date_when_present() -> None:
+    from archetype.reporter import _format_rule_name
+
+    result = RuleResult(name="no-legacy-imports", passed=False, escalate_date="2026-11-01")
+    assert _format_rule_name(result) == "no-legacy-imports (warn until 2026-11-01)"
+
+
+def test_format_results_json_includes_escalate_date() -> None:
+    payload = format_results_json(
+        [RuleResult(name="no-legacy-imports", passed=False, escalate_date="2026-11-01")]
+    )
+    assert payload["rules"][0]["escalate_date"] == "2026-11-01"
+
+
 def test_format_results_json_includes_schema_version() -> None:
     payload = format_results_json(_results_fixture())
 
@@ -185,6 +199,7 @@ def test_format_results_json_contract_shape_is_stable() -> None:
                 "status": "passed",
                 "group": None,
                 "since_date": None,
+                "escalate_date": None,
                 "policy": "error",
                 "violations": [],
                 "diagnostics": [],
@@ -194,6 +209,7 @@ def test_format_results_json_contract_shape_is_stable() -> None:
                 "status": "failed",
                 "group": "core",
                 "since_date": "2026-01-01",
+                "escalate_date": None,
                 "policy": "error",
                 "violations": [
                     {

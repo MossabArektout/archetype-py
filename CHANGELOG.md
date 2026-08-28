@@ -9,6 +9,10 @@
   packages across multiple repositories without copy-pasting
   `architecture.py` rules. Registering two different rules under the same
   name now raises a clear error instead of silently shadowing one of them.
+- Added `@escalate(warn_until="YYYY-MM-DD")` for scheduling a rule to
+  transition from warning-only to a hard failure automatically on a given
+  date, for rolling out new org-wide rules without a flag day. Added an
+  `escalate_date` field to the JSON and SARIF report contracts.
 
 ### Documentation
 - Documented current `archetype check` flags, including `--group`,

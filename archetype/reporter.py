@@ -71,6 +71,8 @@ def _violation_location(violation: Violation) -> str | None:
 def _format_rule_name(result: RuleResult) -> str:
     if result.since_date:
         return f"{result.name} (since {result.since_date})"
+    if result.escalate_date:
+        return f"{result.name} (warn until {result.escalate_date})"
     return result.name
 
 
@@ -270,6 +272,7 @@ def format_results_json(
                 "status": _result_status(result),
                 "group": result.group,
                 "since_date": result.since_date,
+                "escalate_date": result.escalate_date,
                 "policy": result.policy,
                 "violations": [
                     {
@@ -311,6 +314,8 @@ def _sarif_rule_properties(result: RuleResult) -> dict[str, object]:
         properties["group"] = result.group
     if result.since_date is not None:
         properties["since_date"] = result.since_date
+    if result.escalate_date is not None:
+        properties["escalate_date"] = result.escalate_date
     return properties
 
 
