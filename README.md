@@ -112,6 +112,7 @@ repositories, db), see [`examples/fastapi/`](./examples/fastapi).
 - Warning-only rules
 - Temporary skips with reasons
 - Date-scoped rules with `@since`
+- Scheduled warning-to-failure escalation with `@escalate`
 - Baseline mode for legacy adoption
 - Changed-files mode for CI and large repositories
 - GitHub Actions inline PR annotations
@@ -185,9 +186,10 @@ Rules are plain Python functions registered with decorators.
 | `@warn` | Report violations without failing the exit code. | `@warn` |
 | `@skip` / `@skip(reason="...")` | Temporarily skip a rule. | `@skip(reason="Refactor in progress")` |
 | `@since("YYYY-MM-DD")` | Only report violations in files modified after a date. | `@since("2026-01-01")` |
+| `@escalate(warn_until="YYYY-MM-DD")` | Warning-only through the date, then a hard failure automatically. | `@escalate(warn_until="2026-11-01")` |
 | `group("name")` | Assign enclosed rules to a group. | `with group("Layer boundaries"):` |
 
-Decorator order tip: write `@rule(...)` as the top decorator, above wrappers such as `@warn`, `@skip`, or `@since`.
+Decorator order tip: write `@rule(...)` as the top decorator, above wrappers such as `@warn`, `@skip`, `@since`, or `@escalate`.
 
 ```python
 @rule("warning-example")
@@ -195,6 +197,36 @@ Decorator order tip: write `@rule(...)` as the top decorator, above wrappers suc
 def warning_example() -> None:
     ...
 ```
+
+## Gradual Severity Escalation
+
+Rolling out a brand-new architecture rule org-wide as a hard failure on day
+one blocks every pull request that happens to touch an existing violation
+at once. `@escalate` schedules the transition instead: the rule is
+warning-only up to a deadline, then becomes a hard failure automatically
+from that date on, with no code or config change needed on the day itself.
+
+```python
+@rule("no-legacy-imports")
+@escalate(warn_until="2026-11-01")
+def no_legacy_imports() -> None:
+    imports("myapp").must_not_import("myapp.legacy")
+```
+
+Through 2026-11-01 (inclusive), violations show up as warnings — visible
+in output, but they don't fail the exit code, same as `@warn`. From
+2026-11-02 onward, the same rule fails the build on any remaining
+violation.
+
+This differs from manually changing a rule's `archetype.toml` policy from
+`"warning"` to `"error"` on the deadline: nobody has to remember to make
+that edit, and every project depending on a [shared rule package](#shared-inheritable-rule-packs)
+escalates on the same date without needing to coordinate the timing
+themselves.
+
+A rule currently in its warning period is shown with its deadline, for
+example `no-legacy-imports (warn until 2026-11-01)`, and the deadline is
+also included in JSON (`escalate_date`) and SARIF report output.
 
 ## Shared, Inheritable Rule Packs
 

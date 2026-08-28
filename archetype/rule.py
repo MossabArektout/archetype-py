@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from functools import wraps
 from pathlib import Path
 from types import ModuleType
@@ -412,6 +413,79 @@ def skip(
 
     if callable(func):
         return decorator(func)
+    return decorator
+
+
+def _today() -> date:
+    return date.today()
+
+
+def escalate(warn_until: str) -> Callable[[RuleFn], RuleFn]:
+    """Decorator that turns a rule into a warning until a deadline date, then
+    into a hard failure automatically from that date onward.
+
+    This lets a new, org-wide rule be rolled out on a schedule instead of
+    blocking every existing violation the moment the rule is added:
+
+        @rule("no-legacy-imports")
+        @escalate(warn_until="2026-11-01")
+        def no_legacy_imports() -> None:
+            imports("myapp").must_not_import("myapp.legacy")
+
+    Through 2026-11-01 (inclusive), violations are reported as warnings —
+    visible in output, but they do not fail the exit code, same as
+    ``@warn``. From 2026-11-02 onward, the exact same rule starts failing
+    the build on any remaining violation, with no code or config change
+    required on that date.
+
+    Unlike manually flipping a rule's `archetype.toml` policy from
+    ``"warning"`` to ``"error"`` on the deadline, the transition happens on
+    its own — there's no step to forget, and every project depending on a
+    shared rule package (see :func:`use`) escalates on the same date.
+
+    `warn_until` must be an ISO ``YYYY-MM-DD`` date string.
+    """
+    deadline = parse_date_string(warn_until)
+
+    def decorator(func: RuleFn) -> RuleFn:
+        setattr(func, "_escalate_until", warn_until)
+
+        @wraps(func)
+        def wrapped() -> None | RuleResult:
+            rule_name = getattr(
+                wrapped,
+                "_rule_name",
+                getattr(func, "_rule_name", func.__name__),
+            )
+            in_grace_period = _today() <= deadline
+
+            try:
+                outcome = func()
+            except AssertionError as exc:
+                if not in_grace_period:
+                    raise
+                violations = getattr(exc, "violations", [])
+                violation_context = getattr(exc, "violation_context", [])
+                return RuleResult(
+                    name=rule_name,
+                    passed=False,
+                    violations=violations,
+                    violation_context=violation_context,
+                    warned=True,
+                    is_warning=True,
+                    escalate_date=warn_until,
+                )
+
+            if isinstance(outcome, RuleResult):
+                if outcome.escalate_date is None:
+                    outcome.escalate_date = warn_until
+                return outcome
+
+            return RuleResult(name=rule_name, passed=True, escalate_date=warn_until)
+
+        setattr(wrapped, "_escalate_until", warn_until)
+        return wrapped
+
     return decorator
 
 
