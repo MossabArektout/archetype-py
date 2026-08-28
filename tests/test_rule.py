@@ -2,12 +2,13 @@
 
 import time
 import importlib
+import types
 from pathlib import Path
 
 import pytest
 
 from archetype.analysis.models import Violation
-from archetype.rule import group, registry, rule, skip, warn
+from archetype.rule import group, registry, rule, skip, use, warn
 
 rule_module = importlib.import_module("archetype.rule")
 
@@ -329,6 +330,123 @@ def test_rule_without_timeout_avoids_thread_execution_path(monkeypatch) -> None:
     assert len(results) == 1
     assert results[0].passed is True
     assert results[0].timed_out is False
+
+
+def test_registering_two_different_functions_with_same_name_raises() -> None:
+    @rule("shared-name")
+    def first_rule() -> None:
+        return None
+
+    with pytest.raises(ValueError, match="already registered"):
+
+        @rule("shared-name")
+        def second_rule() -> None:
+            return None
+
+
+def test_reregistering_the_same_function_object_is_a_noop() -> None:
+    @rule("idempotent-rule")
+    def idempotent_rule() -> None:
+        return None
+
+    registry.register(idempotent_rule)
+    registry.register(idempotent_rule)
+
+    assert registry._rules.count(idempotent_rule) == 1
+
+
+def test_use_registers_all_rules_found_in_a_module() -> None:
+    shared = types.ModuleType("shared_rules_fixture")
+
+    @rule("shared-rule-one")
+    def shared_rule_one() -> None:
+        return None
+
+    @rule("shared-rule-two")
+    def shared_rule_two() -> None:
+        return None
+
+    registry.clear()
+    shared.shared_rule_one = shared_rule_one
+    shared.shared_rule_two = shared_rule_two
+    shared.not_a_rule = lambda: None
+
+    use(shared)
+
+    names = {result.name for result in registry.run_all()}
+    assert names == {"shared-rule-one", "shared-rule-two"}
+
+
+def test_use_accepts_a_single_rule_function() -> None:
+    @rule("standalone-shared-rule")
+    def standalone_shared_rule() -> None:
+        return None
+
+    registry.clear()
+    use(standalone_shared_rule)
+
+    results = registry.run_all()
+    assert len(results) == 1
+    assert results[0].name == "standalone-shared-rule"
+
+
+def test_use_accepts_an_iterable_of_rule_functions() -> None:
+    @rule("iterable-rule-one")
+    def iterable_rule_one() -> None:
+        return None
+
+    @rule("iterable-rule-two")
+    def iterable_rule_two() -> None:
+        return None
+
+    registry.clear()
+    use([iterable_rule_one, iterable_rule_two])
+
+    names = {result.name for result in registry.run_all()}
+    assert names == {"iterable-rule-one", "iterable-rule-two"}
+
+
+def test_use_can_be_called_immediately_after_the_defining_import() -> None:
+    """`use()` right after import must not double-register (see docstring:
+    the decorator already registered once during that same import)."""
+
+    @rule("just-decorated-rule")
+    def just_decorated_rule() -> None:
+        return None
+
+    use(just_decorated_rule)
+
+    assert registry._rules.count(just_decorated_rule) == 1
+
+
+def test_use_reregisters_after_registry_clear_without_reimport() -> None:
+    """Simulates a monorepo pytest collection: the shared module is only
+    ever imported once by Python, but `use()` must repopulate the registry
+    on every subsequent architecture.py load after it is cleared."""
+    shared = types.ModuleType("shared_rules_fixture_reregister")
+
+    @rule("monorepo-shared-rule")
+    def monorepo_shared_rule() -> None:
+        return None
+
+    shared.monorepo_shared_rule = monorepo_shared_rule
+
+    # First "architecture.py" load.
+    registry.clear()
+    use(shared)
+    assert [r.name for r in registry.run_all()] == ["monorepo-shared-rule"]
+
+    # Second "architecture.py" load in the same process: the module object
+    # is the same (no re-import happens), but use() must still repopulate
+    # the freshly cleared registry.
+    registry.clear()
+    use(shared)
+    assert [r.name for r in registry.run_all()] == ["monorepo-shared-rule"]
+
+
+def test_use_rejects_unsupported_argument_types() -> None:
+    with pytest.raises(TypeError):
+        use(42)
 
 
 def test_registry_continues_executing_rules_after_timeout() -> None:

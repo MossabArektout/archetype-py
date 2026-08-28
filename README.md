@@ -123,6 +123,7 @@ repositories, db), see [`examples/fastapi/`](./examples/fastapi).
 - Import graph caching
 - Pytest plugin support
 - Git pre-commit hook installer
+- Shared, installable rule packs via `archetype.rule.use()`
 
 ## Supported Layouts
 
@@ -194,6 +195,50 @@ Decorator order tip: write `@rule(...)` as the top decorator, above wrappers suc
 def warning_example() -> None:
     ...
 ```
+
+## Shared, Inheritable Rule Packs
+
+Publish a set of rules as a normal installable Python package so multiple
+repositories can enforce the same policy without copy-pasting
+`architecture.py` between them:
+
+```python
+# In the shared package (e.g. acme_archetype_rules)
+from archetype import group, imports, rule
+
+with group("Org baseline"):
+    @rule("no-direct-db-access-from-api")
+    def no_direct_db_access_from_api() -> None:
+        imports("api").must_not_import("db")
+```
+
+```python
+# In each consuming project's architecture.py
+import acme_archetype_rules
+from archetype.rule import use
+
+use(acme_archetype_rules)
+```
+
+`use()` registers every `@rule`-decorated function found in a module (or
+accepts individual rule functions, or an iterable of them). Unlike a bare
+`import`, it's safe to call even when the shared module was already
+imported earlier in the same process — for example, a monorepo's pytest
+plugin collecting multiple `architecture.py` files against the same shared
+package — because Python only re-executes a module's `@rule` decorators
+the first time it's imported.
+
+A repository can still relax or disable one inherited rule locally without
+touching the shared package, using the normal per-rule `policy` setting in
+`archetype.toml`, matched by the rule's name:
+
+```toml
+[rules."no-direct-db-access-from-api"]
+policy = "warning"
+```
+
+See [`examples/shared-rules/`](./examples/shared-rules) for a complete,
+runnable example.
 
 ## Diagnostics
 
