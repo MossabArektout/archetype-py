@@ -15,6 +15,9 @@
   `escalate_date` field to the JSON and SARIF report contracts.
 
 ### Documentation
+- Added GitLab CI and Azure Pipelines examples alongside the existing
+  GitHub Actions one, so teams on those platforms don't have to translate
+  the job syntax themselves.
 - Documented current `archetype check` flags, including `--group`,
   `--format json`, `--quiet`, and `--no-cache` examples. (#42)
 - Added a FastAPI example under `examples/fastapi/` with a realistic
