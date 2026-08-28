@@ -407,6 +407,49 @@ Inline PR annotations:
 - run: archetype check . --github-annotations
 ```
 
+## GitLab CI
+
+The command is the same as anywhere else — install Archetype, then run
+`archetype check .`. Only the surrounding job syntax differs:
+
+```yaml
+archetype:
+  image: python:3.11
+  stage: test
+  script:
+    - python -m pip install archetype-py
+    - archetype check .
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+```
+
+## Azure Pipelines
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "3.11"
+  - script: |
+      python -m pip install archetype-py
+      archetype check .
+    displayName: "Run Archetype"
+```
+
 ## Pre-commit Hook
 
 Archetype can install a managed Git pre-commit hook so violations are caught before a commit is created, not after it reaches CI.
