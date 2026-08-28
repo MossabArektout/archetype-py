@@ -2,6 +2,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/archetype-py/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/MossabArektout/archetype-py/blob/main/LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/MossabArektout/archetype-py/ci.yml?branch=main&label=ci)](https://github.com/MossabArektout/archetype-py/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/MossabArektout/archetype-py/badge)](https://securityscorecards.dev/viewer/?uri=github.com/MossabArektout/archetype-py)
 
 # archetype-py
 
@@ -591,9 +592,23 @@ Imports are missing from the graph
 
 Check that modules live under detected package roots. `archetype doctor .` shows the roots Archetype is using.
 
+## Security
+
+Archetype makes no network calls and sends no telemetry. It only reads
+source files from disk and writes reports to stdout or the file/path you
+specify.
+
+`architecture.py` is loaded and executed as ordinary Python, not parsed as
+inert data — rules can do anything Python can do, with the same privileges
+as the process running `archetype check`. Do not run `archetype check`
+against untrusted, unreviewed changes (for example, code from a fork PR)
+in a CI job that has write permissions or access to secrets. See
+[`SECURITY.md`](./SECURITY.md) for the full security model and how to
+report a vulnerability.
+
 ## Roadmap
 
-See [`ROADMAP.md`](./ROADMAP.md) for planned work.
+Planned work is tracked in [GitHub Issues](https://github.com/MossabArektout/archetype-py/issues) and milestones.
 
 ## Contributing
 

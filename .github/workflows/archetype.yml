@@ -18,7 +18,7 @@ jobs:
     steps:
       # Pull down your repository code so CI can inspect it.
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           token: ${{ github.token }}
           ref: ${{ github.ref }}
@@ -26,7 +26,7 @@ jobs:
 
       # Install Python 3.11 so the Archetype CLI can run.
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
