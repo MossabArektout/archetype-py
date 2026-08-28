@@ -5,6 +5,10 @@
 ### Added
 - Added per-rule `error`, `warning`, and `off` policies via `archetype.toml`
   for gradual rule adoption and rollout control. (#64)
+- Added `archetype.rule.use()` for adopting shared, installable rule
+  packages across multiple repositories without copy-pasting
+  `architecture.py` rules. Registering two different rules under the same
+  name now raises a clear error instead of silently shadowing one of them.
 
 ### Documentation
 - Documented current `archetype check` flags, including `--group`,
@@ -15,6 +19,8 @@
 - Documented the built-in `archetype install-hook` pre-commit hook, including
   verification steps, `PATH` requirements, and coexistence with existing
   hooks. (#76)
+- Added an `examples/shared-rules/` walkthrough for publishing an
+  installable, shared rule package and adopting it across repositories.
 
 ## 0.4.0 - 2026-07-05
 

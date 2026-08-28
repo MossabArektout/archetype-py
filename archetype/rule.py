@@ -6,7 +6,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from pathlib import Path
-from typing import Callable
+from types import ModuleType
+from typing import Callable, Iterable
 
 from archetype.analysis.git_utils import get_files_modified_after, parse_date_string
 from archetype.analysis.models import RuleResult
@@ -49,17 +50,45 @@ class RuleRegistry:
     def __init__(self) -> None:
         self._rules: list[RuleFn] = []
         self._entries: list[RuleEntry] = []
+        self._by_name: dict[str, RuleFn] = {}
 
     def register(self, func: RuleFn) -> None:
-        """Register a rule function."""
+        """Register a rule function.
+
+        Registering the same function object under a name that is already
+        registered is a no-op. This happens naturally when a shared rule
+        module's already-decorated functions are re-registered through
+        :func:`use` — for example when a monorepo's pytest plugin collects
+        several ``architecture.py`` files that each depend on the same
+        shared rule package, or when ``use`` runs right after the first
+        import already triggered the decorator's own registration.
+
+        Registering two *different* functions under the same name raises,
+        since two rules silently sharing one name would be indistinguishable
+        in reports.
+        """
+        rule_name = getattr(func, "_rule_name", func.__name__)
+        existing = self._by_name.get(rule_name)
+        if existing is not None:
+            if existing is func:
+                return
+            raise ValueError(
+                f"Rule name {rule_name!r} is already registered by a "
+                "different function. Rule names must be unique within a "
+                "project, including rules pulled in from shared rule "
+                "packages via archetype.rule.use() — rename one of the "
+                "conflicting rules."
+            )
         group_name = getattr(func, "_group", None)
         self._rules.append(func)
         self._entries.append((func, group_name))
+        self._by_name[rule_name] = func
 
     def clear(self) -> None:
         """Remove all registered rule functions."""
         self._rules.clear()
         self._entries.clear()
+        self._by_name.clear()
 
     def _apply_policy(self, result: RuleResult, policy: RulePolicy) -> RuleResult:
         result.policy = policy
@@ -270,6 +299,56 @@ def rule(name: str, *, timeout: float | None = None) -> Callable[[RuleFn], RuleF
         return wrapped
 
     return decorator
+
+
+def _rule_candidates(source: object) -> list[object]:
+    if isinstance(source, ModuleType):
+        return list(vars(source).values())
+    if callable(source):
+        return [source]
+    if isinstance(source, Iterable):
+        return list(source)
+    raise TypeError(
+        "use() expects a module, a rule function, or an iterable of rule "
+        f"functions, got {type(source).__name__}."
+    )
+
+
+def use(*sources: object) -> None:
+    """Register rules exported by one or more shared rule modules or packages.
+
+    This is how a project adopts a shared, installable rule pack (for
+    example an internal ``acme_archetype_rules`` package published for use
+    across many repositories) instead of copy-pasting the same rules into
+    every ``architecture.py``:
+
+        from acme_archetype_rules import base_rules
+        from archetype.rule import use
+
+        use(base_rules)
+
+    Each argument may be a module (every ``@rule``-decorated function found
+    in it is registered), a single rule function, or an iterable of rule
+    functions.
+
+    Unlike a bare ``import``, calling ``use()`` is safe to repeat: Python
+    only executes a module's top-level code — including ``@rule``
+    decorators — the first time it is imported in a process. A bare import
+    of a shared rule module would silently register no rules on any later
+    load that reuses Python's module cache (for example, a monorepo's
+    pytest plugin collecting a second ``architecture.py`` file after
+    clearing the registry). ``use()`` re-registers the already-decorated
+    functions directly, independent of whether Python re-executed the
+    module.
+
+    A shared rule's severity can still be overridden per project through
+    the normal ``archetype.toml`` per-rule ``policy`` setting, matched by
+    the rule's registered name — the same mechanism used for local rules.
+    """
+    for source in sources:
+        for candidate in _rule_candidates(source):
+            if callable(candidate) and hasattr(candidate, "_rule_name"):
+                registry.register(candidate)
 
 
 def warn(func: RuleFn) -> RuleFn:
