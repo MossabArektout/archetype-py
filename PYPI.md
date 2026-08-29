@@ -50,9 +50,11 @@ def layer_order() -> None:
 
 - Architecture rules for forbidden imports, allowlisted imports, and protected boundaries
 - Transitive dependency checks with `must_not_depend_on`
-- Layer order enforcement with `layers(...).are_ordered()`
+- Layer order enforcement with `layers(...).are_ordered()`, and strict no-skipping mode with `.are_adjacent()`
 - Import cycle detection with `no_cycles(...)`
 - Public API enforcement from a package's declared `__all__` with `public_api(...).enforce()`
+- Import depth limits and fan-in/fan-out coupling thresholds with `imports(...).max_depth(n)`, `.fan_in_at_most(n)`, `.fan_out_at_most(n)`
+- Deprecated-module sunset warnings with `deprecated(pattern, sunset=..., reason=...)`
 - Rule decorators: `@rule`, `@warn`, `@skip`, `@since`
 - Rule grouping via `group("...")` and targeted execution with `--group`
 - `archetype init` scaffolding for starter `architecture.py`

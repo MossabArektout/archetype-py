@@ -194,10 +194,13 @@ Warnings do not fail the run — this example exits `0`. See
 - Forbidden import rules
 - Allowlisted import rules
 - Transitive dependency checks
-- Layer ordering rules
+- Layer ordering rules, with strict adjacent-layer (no layer-skipping) mode
 - Import cycle detection
 - Protected internal module boundaries
 - Public API enforcement from a package's declared `__all__`
+- Maximum import depth limits
+- Fan-in / fan-out coupling thresholds
+- Deprecated-module import warnings with sunset dates
 - Naming convention checks
 - Rule groups and targeted execution
 - Warning-only rules
@@ -247,6 +250,91 @@ from billing.invoice import Invoice  # Violation: reaches past it into billing.i
 ```
 
 A submodule can be declared public in its own right by naming it in `__all__` (`__all__ = ["Invoice", "reporting"]` allows `import billing.reporting` and everything beneath it). `public_api(...)` requires the target package to declare `__all__` as a literal list or tuple of strings in its `__init__.py`; it raises a clear error naming the file if `__all__` is missing, computed, or the package has no `__init__.py` (namespace packages are not supported, since there is nowhere to declare an interface). A pattern can also match several packages at once, e.g. `public_api("myapp.*")` to enforce every top-level package's interface in one rule.
+
+## Strict Layering: No Skipping
+
+`layers([...]).are_ordered()` stops a lower layer from importing an upper one, but still allows a top layer to reach straight past a middle layer into the bottom one. `are_adjacent()` closes that gap: every cross-layer import must go through the layer directly below it.
+
+```python
+from archetype.rules import layers
+
+@rule("layers-are-strict")
+def layers_are_strict() -> None:
+    layers(["myapp.api", "myapp.services", "myapp.db"]).are_adjacent()
+```
+
+```python
+# myapp/api.py
+from myapp import services  # OK: the adjacent layer
+from myapp import db        # Violation: skips over services
+```
+
+`are_adjacent()` is a strict superset of `are_ordered()` — it also catches upward imports — so call one or the other for a given layer list, not both, to avoid the same edge being reported twice.
+
+## Import Depth and Coupling Limits
+
+Three checks on `imports(...)` catch structural drift that shows up gradually, rather than one specific forbidden import:
+
+| Check | Flags | Example |
+|---|---|---|
+| `max_depth(n)` | Any import reaching more than `n` dotted segments deep | `imports("**").max_depth(3)` |
+| `fan_in_at_most(n)` | A matched module imported by more than `n` other modules | `imports("myapp.core.*").fan_in_at_most(15)` |
+| `fan_out_at_most(n)` | A matched module importing more than `n` other modules | `imports("myapp.*").fan_out_at_most(10)` |
+
+```python
+from archetype import imports
+
+@rule("no-deep-reaches")
+def no_deep_reaches() -> None:
+    imports("myapp").max_depth(4)
+
+@rule("core-utils-not-overloaded")
+def core_utils_not_overloaded() -> None:
+    # A low-level utility with too many importers is a hidden hub; catch
+    # it before "just add one more caller" becomes a refactor no one can do.
+    imports("myapp.core.utils").fan_in_at_most(20)
+
+@rule("handlers-not-doing-too-much")
+def handlers_not_doing_too_much() -> None:
+    # A module that imports too much is usually a module doing too much.
+    imports("myapp.api.*").fan_out_at_most(8)
+```
+
+Fan-in and fan-out violations point at the module's own defining file, since the violation is about its overall shape rather than one specific import line.
+
+## Deprecating a Module
+
+`deprecated(pattern, sunset=..., reason=...)` flags every import of a module or package from outside itself, with a message that names the reason and counts down to (or past) the sunset date — self-imports within the deprecated subtree, such as its own `__init__.py` re-exporting a sibling submodule, are not flagged.
+
+```python
+from archetype import rule
+from archetype.rules import deprecated
+
+@rule("legacy-billing-removed")
+def legacy_billing_removed() -> None:
+    deprecated(
+        "myapp.legacy_billing",
+        sunset="2026-11-01",
+        reason="replaced by myapp.billing_v2",
+    )
+```
+
+```
+Deprecated module import: 'myapp.reports' imports 'myapp.legacy_billing', which
+is deprecated (replaced by myapp.billing_v2). Scheduled for removal on
+2026-11-01 (14 day(s) remaining).
+```
+
+`deprecated(...)` always reports a violation when the module is imported — it does not decide pass/fail from the date itself, keeping severity policy in one place. Combine it with [`@escalate`](#gradual-severity-escalation) to make it warn now and start failing the build exactly on `sunset`, with no second step to remember on the day:
+
+```python
+@rule("legacy-billing-removed")
+@escalate(warn_until="2026-11-01")
+def legacy_billing_removed() -> None:
+    deprecated("myapp.legacy_billing", sunset="2026-11-01")
+```
+
+Both `sunset` and `reason` are optional; without `sunset` the message reports "No removal date is set."
 
 ## Supported Layouts
 

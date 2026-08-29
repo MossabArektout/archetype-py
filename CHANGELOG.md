@@ -13,6 +13,20 @@
   The CLI now forces UTF-8 stdout/stderr on Windows.
 
 ### Added
+- Added `layers([...]).are_adjacent()`, a strict variant of `are_ordered()`
+  that also rejects layer-skipping imports (e.g. an API layer reaching
+  straight past a services layer into the DB layer), requiring every
+  cross-layer import to route through the layer directly below it.
+- Added `imports(...).max_depth(n)` to cap how many dotted segments deep an
+  import target may reach.
+- Added `imports(...).fan_in_at_most(n)` and `imports(...).fan_out_at_most(n)`
+  to flag modules with too many importers or too many dependencies, pointing
+  the violation at the module's own defining file.
+- Added `deprecated(pattern, sunset=..., reason=...)` for flagging imports of
+  a deprecated module or package from outside itself, with a message that
+  counts down to (or reports overdue past) the sunset date. Combine with
+  `@escalate(warn_until=...)` to turn a warning into a hard failure exactly
+  on the sunset date.
 - Added `public_api(pattern).enforce()` for declaring and enforcing a
   package's public interface from its `__all__`. Any import that reaches
   past a package's declared `__all__` into an internal submodule is a

@@ -133,6 +133,36 @@ def discover_package_roots(
     return [resolved_root]
 
 
+_INIT_FILENAMES = ("__init__.py", "init.py")
+
+
+def resolve_module_file(
+    module_name: str,
+    project_root: Path,
+    *,
+    exclude_patterns: Iterable[str] | None = None,
+) -> Path | None:
+    """Return the source file that defines a local module, if any.
+
+    Tries each discovered package root for a matching leaf `.py` file or,
+    for a package, `__init__.py`/`init.py`. Used by rules that need to
+    point a violation at the file defining a module, rather than at one of
+    the edges to or from it.
+    """
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
+    parts = module_name.split(".")
+    for package_root in discover_package_roots(project_root, exclude_patterns=normalized_excludes):
+        base = package_root.joinpath(*parts)
+        leaf_file = base.with_suffix(".py")
+        if leaf_file.is_file():
+            return leaf_file
+        for filename in _INIT_FILENAMES:
+            candidate = base / filename
+            if candidate.is_file():
+                return candidate
+    return None
+
+
 def build_import_graph(
     project_root: Path,
     *,

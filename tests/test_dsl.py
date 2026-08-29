@@ -165,3 +165,88 @@ def test_builtin_rule_without_load_project_raises_runtime_error_with_helpful_mes
     with pytest.raises(RuntimeError) as excinfo:
         no_cycles()
     assert "archetype check" in str(excinfo.value)
+
+
+def test_max_depth_raises_for_imports_deeper_than_the_limit() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError) as excinfo:
+        imports("simple_project").max_depth(2)
+
+    violations = getattr(excinfo.value, "violations", [])
+    assert violations
+    assert all("simple_project.internal.tokens" in v.message for v in violations)
+    assert {v.module for v in violations} == {"simple_project.api", "simple_project.services"}
+
+
+def test_max_depth_passes_when_no_import_exceeds_the_limit() -> None:
+    load_project(_fixture_root())
+
+    imports("simple_project").max_depth(3)
+
+
+def test_max_depth_rejects_non_positive_limit() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(ValueError, match="max_segments"):
+        imports("simple_project").max_depth(0)
+
+
+def test_fan_in_at_most_raises_for_modules_imported_too_often() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError) as excinfo:
+        imports("simple_project").fan_in_at_most(1)
+
+    violations = getattr(excinfo.value, "violations", [])
+    assert {v.module for v in violations} == {
+        "simple_project.db",
+        "simple_project.internal.tokens",
+    }
+    assert all("Fan-in violation" in v.message for v in violations)
+
+
+def test_fan_in_at_most_passes_when_nothing_exceeds_the_limit() -> None:
+    load_project(_fixture_root())
+
+    imports("simple_project").fan_in_at_most(2)
+
+
+def test_fan_in_at_most_violation_points_to_the_module_file_not_an_edge() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError) as excinfo:
+        imports("simple_project").fan_in_at_most(1)
+
+    violations = getattr(excinfo.value, "violations", [])
+    db_violation = next(v for v in violations if v.module == "simple_project.db")
+    expected_file = (_fixture_root() / "simple_project" / "db.py").resolve()
+    assert Path(db_violation.file).resolve() == expected_file
+    assert db_violation.line == 0
+
+
+def test_fan_out_at_most_raises_for_modules_that_import_too_much() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(AssertionError) as excinfo:
+        imports("simple_project").fan_out_at_most(2)
+
+    violations = getattr(excinfo.value, "violations", [])
+    assert {v.module for v in violations} == {"simple_project.api"}
+    assert "Fan-out violation" in violations[0].message
+
+
+def test_fan_out_at_most_passes_when_nothing_exceeds_the_limit() -> None:
+    load_project(_fixture_root())
+
+    imports("simple_project").fan_out_at_most(3)
+
+
+def test_fan_in_and_fan_out_reject_negative_limits() -> None:
+    load_project(_fixture_root())
+
+    with pytest.raises(ValueError, match="fan_in_at_most"):
+        imports("simple_project").fan_in_at_most(-1)
+
+    with pytest.raises(ValueError, match="fan_out_at_most"):
+        imports("simple_project").fan_out_at_most(-1)

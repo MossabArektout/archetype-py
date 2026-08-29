@@ -14,7 +14,7 @@ from archetype.analysis.cache import (
     load_cached_graph,
     save_cached_graph,
 )
-from archetype.analysis.imports import build_import_graph
+from archetype.analysis.imports import build_import_graph, resolve_module_file
 from archetype.analysis.models import Violation
 from archetype.analysis.path_filters import normalize_exclude_patterns
 from archetype.analysis.pattern import find_matching_nodes, suggest_patterns, validate_pattern
@@ -120,6 +120,31 @@ def _edge_violation_location(
         line = 0
 
     return file_path, line
+
+
+def _module_violation_location(module_name: str) -> tuple[Path, int]:
+    """Resolve a module-level (not edge-level) violation to its defining file.
+
+    Used by checks like fan_in_at_most()/fan_out_at_most() that flag a
+    module for its overall shape rather than one specific import
+    statement, so there is no single edge to point at. Line 0 signals a
+    whole-file violation, the same convention _edge_violation_location()
+    falls back to when an edge has no recorded line.
+    """
+    if _current_root is not None:
+        file_path = resolve_module_file(module_name, _current_root, exclude_patterns=_exclude_patterns)
+        if file_path is not None:
+            return file_path, 0
+    return Path("<unknown>"), 0
+
+
+def _format_module_list(names: list[str], *, limit: int = 5) -> str:
+    """Render a bounded, human-readable list of module names for messages."""
+    ordered = sorted(names)
+    if len(ordered) <= limit:
+        return ", ".join(ordered)
+    shown = ", ".join(ordered[:limit])
+    return f"{shown}, and {len(ordered) - limit} more"
 
 
 class ImportQuery:
@@ -282,6 +307,126 @@ class ImportQuery:
                 exc,
                 "violation_context",
                 [f"Allowed imports for '{self.pattern}': {allowed_summary}."],
+            )
+            setattr(exc, "violations", violations)
+            raise exc
+
+    def max_depth(self, max_segments: int) -> None:
+        """Assert that matched source modules import nothing nested deeper
+        than max_segments dotted segments.
+
+        Example:
+            # Forbid reaching more than 3 packages deep from anywhere.
+            imports("**").max_depth(3)
+
+        A target's depth is its dotted-name segment count, so
+        "myapp.billing" is depth 2 and "myapp.billing.internal.db" is
+        depth 4. Use public_api(...) instead when the allowed depth
+        should vary per package based on a declared __all__.
+        """
+        if max_segments < 1:
+            raise ValueError("max_depth() requires max_segments >= 1.")
+
+        violations: list[Violation] = []
+        for source in self.matched_nodes:
+            for target in self.graph.successors(source):
+                depth = target.count(".") + 1
+                if depth <= max_segments:
+                    continue
+                violation_file, violation_line = _edge_violation_location(
+                    self.graph, source, target
+                )
+                violations.append(
+                    Violation(
+                        module=source,
+                        file=violation_file,
+                        line=violation_line,
+                        message=(
+                            f"Import depth violation: '{source}' imports '{target}' "
+                            f"({depth} segments deep), exceeding the maximum of "
+                            f"{max_segments}."
+                        ),
+                    )
+                )
+
+        if violations:
+            exc = AssertionError(
+                f"Import depth exceeded by {len(violations)} import(s) from '{self.pattern}'."
+            )
+            setattr(exc, "violations", violations)
+            raise exc
+
+    def fan_in_at_most(self, max_count: int) -> None:
+        """Assert that no matched module is imported by more than max_count
+        other modules (its fan-in).
+
+        A high fan-in on a low-level utility is normal; a high fan-in on a
+        module that is supposed to be an implementation detail is often a
+        sign it has quietly become a hidden hub everything depends on.
+        """
+        if max_count < 0:
+            raise ValueError("fan_in_at_most() requires max_count >= 0.")
+
+        violations: list[Violation] = []
+        for node in self.matched_nodes:
+            importers = list(self.graph.predecessors(node))
+            count = len(importers)
+            if count <= max_count:
+                continue
+            violation_file, violation_line = _module_violation_location(node)
+            violations.append(
+                Violation(
+                    module=node,
+                    file=violation_file,
+                    line=violation_line,
+                    message=(
+                        f"Fan-in violation: '{node}' is imported by {count} module(s) "
+                        f"({_format_module_list(importers)}), exceeding the maximum "
+                        f"of {max_count}."
+                    ),
+                )
+            )
+
+        if violations:
+            exc = AssertionError(
+                f"Fan-in exceeded for {len(violations)} module(s) matching '{self.pattern}'."
+            )
+            setattr(exc, "violations", violations)
+            raise exc
+
+    def fan_out_at_most(self, max_count: int) -> None:
+        """Assert that no matched module imports more than max_count other
+        modules (its fan-out).
+
+        A high fan-out often means a module is doing too much and is
+        coupled to more of the system than it should be.
+        """
+        if max_count < 0:
+            raise ValueError("fan_out_at_most() requires max_count >= 0.")
+
+        violations: list[Violation] = []
+        for node in self.matched_nodes:
+            dependencies = list(self.graph.successors(node))
+            count = len(dependencies)
+            if count <= max_count:
+                continue
+            violation_file, violation_line = _module_violation_location(node)
+            violations.append(
+                Violation(
+                    module=node,
+                    file=violation_file,
+                    line=violation_line,
+                    message=(
+                        f"Fan-out violation: '{node}' imports {count} module(s) "
+                        f"({_format_module_list(dependencies)}), exceeding the "
+                        f"maximum of {max_count}."
+                    ),
+                )
+            )
+
+        if violations:
+            exc = AssertionError(
+                f"Fan-out exceeded for {len(violations)} module(s) matching '{self.pattern}'."
             )
             setattr(exc, "violations", violations)
             raise exc
