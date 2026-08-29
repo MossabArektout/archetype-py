@@ -216,6 +216,7 @@ Warnings do not fail the run — this example exits `0`. See
 - Import graph caching
 - Pytest plugin support
 - Git pre-commit hook installer
+- `.pre-commit-hooks.yaml` manifest for the [pre-commit framework](https://pre-commit.com/)
 - Shared, installable rule packs via `archetype.rule.use()`
 
 ## Supported Layouts
@@ -594,7 +595,32 @@ steps:
 
 ## Pre-commit Hook
 
-Archetype can install a managed Git pre-commit hook so violations are caught before a commit is created, not after it reaches CI.
+Archetype can catch violations before a commit is created, not after it reaches CI. There are two ways to wire this up: the [pre-commit framework](https://pre-commit.com/) (recommended if your project already uses it), or Archetype's own built-in hook installer.
+
+### Using the pre-commit framework
+
+Archetype ships a [`.pre-commit-hooks.yaml`](./.pre-commit-hooks.yaml) manifest, so it can be added to `.pre-commit-config.yaml` like any other tool:
+
+```yaml
+repos:
+  - repo: https://github.com/MossabArektout/archetype-py
+    rev: v0.4.0 # use the latest tag
+    hooks:
+      - id: archetype
+```
+
+Then install the hook and run it:
+
+```bash
+pre-commit install
+pre-commit run archetype --all-files
+```
+
+The hook runs `archetype check` against the repository root on every commit (it does not accept a `--changed-from`-style per-file mode, since rules need the full import graph). `pre-commit` installs Archetype into its own managed environment, so your project's virtualenv does not need Archetype installed for the hook to work.
+
+### Using the built-in installer
+
+If you don't use the pre-commit framework, Archetype can install a managed Git hook directly:
 
 ```bash
 archetype install-hook .

@@ -1,0 +1,8 @@
+- id: archetype
+  name: archetype
+  description: Enforce architectural rules as code. Catch forbidden imports, layer leaks, cycles, and boundary violations before they merge.
+  entry: archetype check
+  language: python
+  types: [python]
+  pass_filenames: false
+  require_serial: true

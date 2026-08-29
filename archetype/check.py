@@ -183,6 +183,18 @@ def _count_violations(results: list[RuleResult]) -> ViolationCounts:
 @click.group()
 def cli() -> None:
     """Archetype CLI."""
+    if sys.platform == "win32":
+        # Windows can default stdout/stderr to a legacy codepage (e.g. cp1252)
+        # when not attached to a real console, such as under pre-commit or a
+        # redirected/piped CI run. Rich still writes report symbols (e.g. the
+        # unicode checkmark) through that stream, which raises
+        # UnicodeEncodeError on those codepages. Force UTF-8 so reports
+        # always render, regardless of how the process is invoked.
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass
 
 
 @cli.command("check")

@@ -6,8 +6,16 @@
 - `archetype check --format json` now always emits forward-slash paths in
   the `file` field, matching the documented contract. Previously, running
   on native Windows Python emitted backslash paths instead.
+- Fixed a `UnicodeEncodeError` crash on Windows when `archetype check` runs
+  without a real console attached (for example, under a pre-commit hook, or
+  with output redirected/piped) and the process falls back to a legacy
+  codepage such as cp1252 that cannot represent report symbols like `✓`.
+  The CLI now forces UTF-8 stdout/stderr on Windows.
 
 ### Added
+- Added a `.pre-commit-hooks.yaml` manifest so Archetype can be added to
+  `.pre-commit-config.yaml` like any other pre-commit tool, instead of only
+  through the built-in `archetype install-hook` installer.
 - Added per-rule `error`, `warning`, and `off` policies via `archetype.toml`
   for gradual rule adoption and rollout control. (#64)
 - Added `archetype.rule.use()` for adopting shared, installable rule
