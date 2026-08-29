@@ -116,6 +116,7 @@ repositories, db), see [`examples/fastapi/`](./examples/fastapi).
 - Baseline mode for legacy adoption
 - Changed-files mode for CI and large repositories
 - GitHub Actions inline PR annotations
+- CODEOWNERS-aware violation routing
 - Project diagnostics with `archetype doctor`
 - Import graph export with `archetype graph`
 - Text, JSON, and SARIF report formats
@@ -559,6 +560,7 @@ Each rule includes:
 - `status`
 - `group`
 - `since_date`
+- `escalate_date`
 - `policy`
 - `violations`
 - `diagnostics`
@@ -570,6 +572,8 @@ Each violation includes:
 - `line`
 - `target`
 - `message`
+- `owners`: CODEOWNERS entries matching the violation's file, if a
+  [CODEOWNERS file](#codeowners-integration) is present (empty otherwise)
 
 Example:
 
@@ -594,6 +598,7 @@ Example:
       "status": "failed",
       "group": "Layer boundaries",
       "since_date": null,
+      "escalate_date": null,
       "policy": "error",
       "violations": [
         {
@@ -601,7 +606,8 @@ Example:
           "file": "myapp/api/users.py",
           "line": 7,
           "target": "myapp.db.internal.session",
-          "message": "Module 'myapp.api.users' must not import 'myapp.db' (found import to 'myapp.db.internal.session')."
+          "message": "Module 'myapp.api.users' must not import 'myapp.db' (found import to 'myapp.db.internal.session').",
+          "owners": ["@acme/api-team"]
         }
       ],
       "diagnostics": []
@@ -623,6 +629,39 @@ archetype check . --format sarif > archetype.sarif
 ```
 
 Each Archetype rule is emitted as a SARIF rule descriptor using the rule name as the stable `ruleId`. Each violation is emitted as a SARIF result with a readable message, severity level, source module, imported target, and file/line location when available.
+
+## CODEOWNERS Integration
+
+A generic "CI failed" tells whoever opened the PR that something broke, not
+who is actually responsible for the module involved. If a
+[`CODEOWNERS`](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+file exists, Archetype reads it automatically — no separate ownership file
+to maintain — and routes each violation to the team or user who owns the
+affected path:
+
+```text
+General
+=======
+  ✗ api-must-not-import-db
+    - myapp/api/users.py:7
+        imports myapp.db.internal.session
+        owner: @acme/data-team
+```
+
+The owner also appears in JSON (`owners`), SARIF (`properties.owners`), and
+GitHub Actions inline annotations (prefixed to the message, e.g.
+`@acme/data-team: api-must-not-import-db: ...`).
+
+Archetype checks the same locations and precedence GitHub itself uses:
+
+1. `.github/CODEOWNERS`
+2. `CODEOWNERS` (repository root)
+3. `docs/CODEOWNERS`
+
+Matching follows CODEOWNERS' own last-match-wins rule, same as
+`.gitignore`: later patterns in the file override earlier ones for the
+same path. No configuration is required — if none of the three files
+exist, violations are reported exactly as before.
 
 ## Import Graph Export
 

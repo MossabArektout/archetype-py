@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from archetype.analysis.codeowners import Codeowners, parse_codeowners_text
 from archetype.analysis.models import RuleResult, Violation
 from archetype.reporter import (
     JSON_SCHEMA_VERSION,
@@ -63,10 +64,11 @@ def _render_output(
     results: list[RuleResult],
     quiet: bool,
     capsys: pytest.CaptureFixture[str],
+    codeowners: Codeowners | None = None,
 ) -> str:
     if renderer == "format":
-        return format_results(results, quiet=quiet)
-    print_results(results, quiet=quiet)
+        return format_results(results, quiet=quiet, codeowners=codeowners)
+    print_results(results, quiet=quiet, codeowners=codeowners)
     return capsys.readouterr().out
 
 
@@ -145,6 +147,101 @@ def test_reporter_default_mode_still_shows_passing_and_skipped(
     assert "skipped-rule" in output
 
 
+@pytest.mark.parametrize("renderer", ["format", "print"])
+def test_owner_line_shown_when_codeowners_matches_violation(
+    renderer: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    codeowners = parse_codeowners_text("simple_project/api.py @acme/api-team")
+    results = [
+        RuleResult(name="fail-rule", passed=False, violations=[_violation()]),
+    ]
+
+    output = _render_output(renderer, results, quiet=False, capsys=capsys, codeowners=codeowners)
+
+    assert "owner: @acme/api-team" in output
+
+
+@pytest.mark.parametrize("renderer", ["format", "print"])
+def test_owner_line_omitted_when_codeowners_does_not_match(
+    renderer: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    codeowners = parse_codeowners_text("unrelated/path.py @acme/other-team")
+    results = [
+        RuleResult(name="fail-rule", passed=False, violations=[_violation()]),
+    ]
+
+    output = _render_output(renderer, results, quiet=False, capsys=capsys, codeowners=codeowners)
+
+    assert "owner:" not in output
+
+
+@pytest.mark.parametrize("renderer", ["format", "print"])
+def test_owner_line_omitted_when_no_codeowners_given(
+    renderer: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    results = [
+        RuleResult(name="fail-rule", passed=False, violations=[_violation()]),
+    ]
+
+    output = _render_output(renderer, results, quiet=False, capsys=capsys, codeowners=None)
+
+    assert "owner:" not in output
+
+
+def test_format_results_json_includes_owners_when_matched() -> None:
+    codeowners = parse_codeowners_text("simple_project/api.py @acme/api-team")
+    results = [RuleResult(name="fail-rule", passed=False, violations=[_violation()])]
+
+    payload = format_results_json(results, codeowners=codeowners)
+
+    assert payload["rules"][0]["violations"][0]["owners"] == ["@acme/api-team"]
+
+
+def test_format_results_json_owners_empty_when_no_match() -> None:
+    results = [RuleResult(name="fail-rule", passed=False, violations=[_violation()])]
+
+    payload = format_results_json(results)
+
+    assert payload["rules"][0]["violations"][0]["owners"] == []
+
+
+def test_format_results_sarif_includes_owners_when_matched() -> None:
+    codeowners = parse_codeowners_text("simple_project/api.py @acme/api-team")
+    results = [RuleResult(name="fail-rule", passed=False, violations=[_violation()])]
+
+    payload = format_results_sarif(results, project_root=Path.cwd(), codeowners=codeowners)
+
+    result_properties = payload["runs"][0]["results"][0]["properties"]
+    assert result_properties["owners"] == ["@acme/api-team"]
+
+
+def test_format_github_annotations_prefixes_owner_mention() -> None:
+    codeowners = parse_codeowners_text("simple_project/api.py @acme/api-team")
+    results = [RuleResult(name="fail-rule", passed=False, violations=[_violation()])]
+
+    annotations = format_github_annotations(
+        results, project_root=Path.cwd(), codeowners=codeowners
+    )
+
+    assert len(annotations) == 1
+    assert "@acme/api-team: fail-rule:" in annotations[0]
+
+
+def test_format_github_annotations_no_owner_prefix_when_no_match() -> None:
+    codeowners = parse_codeowners_text("unrelated/path.py @acme/other-team")
+    results = [RuleResult(name="fail-rule", passed=False, violations=[_violation()])]
+
+    annotations = format_github_annotations(
+        results, project_root=Path.cwd(), codeowners=codeowners
+    )
+
+    assert len(annotations) == 1
+    assert "@acme/other-team" not in annotations[0]
+    assert annotations[0].endswith(
+        "fail-rule: Module 'simple_project.api' must not import 'simple_project.db'"
+    )
+
+
 def test_format_rule_name_shows_escalate_date_when_present() -> None:
     from archetype.reporter import _format_rule_name
 
@@ -218,6 +315,7 @@ def test_format_results_json_contract_shape_is_stable() -> None:
                         "line": 1,
                         "target": "simple_project.db",
                         "message": "Module 'simple_project.api' must not import 'simple_project.db'",
+                        "owners": [],
                     }
                 ],
                 "diagnostics": [],

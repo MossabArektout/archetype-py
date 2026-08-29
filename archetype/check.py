@@ -22,6 +22,7 @@ from archetype.baseline import (
     load_baseline,
     write_baseline,
 )
+from archetype.analysis.codeowners import load_codeowners
 from archetype.analysis.git_utils import get_files_changed_from
 from archetype.analysis.cache import (
     compute_file_signatures,
@@ -426,6 +427,7 @@ def check(
         for result in results
         if (not result.passed and not result.warned) or result.timed_out
     )
+    codeowners = load_codeowners(project_path)
     if effective_output_format == "json":
         click.echo(
             json.dumps(
@@ -433,6 +435,7 @@ def check(
                     results,
                     violation_counts=violation_counts,
                     scope=scope_metadata,
+                    codeowners=codeowners,
                 ),
                 ensure_ascii=False,
                 indent=2,
@@ -445,6 +448,7 @@ def check(
                     results,
                     project_root=project_path,
                     scope=scope_metadata,
+                    codeowners=codeowners,
                 ),
                 ensure_ascii=False,
                 indent=2,
@@ -456,10 +460,12 @@ def check(
                 f"Scope: changed-files mode from '{changed_from}' "
                 f"({scope_metadata['changed_files_count']} changed Python files)"
             )
-        print_results(results, quiet=bool(effective_quiet))
+        print_results(results, quiet=bool(effective_quiet), codeowners=codeowners)
 
     if github_annotations:
-        for annotation in format_github_annotations(results, project_root=project_path):
+        for annotation in format_github_annotations(
+            results, project_root=project_path, codeowners=codeowners
+        ):
             click.echo(annotation, err=True)
     raise SystemExit(0 if failed == 0 else 1)
 
