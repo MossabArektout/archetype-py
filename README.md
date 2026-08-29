@@ -114,6 +114,7 @@ repositories, db), see [`examples/fastapi/`](./examples/fastapi).
 - Date-scoped rules with `@since`
 - Scheduled warning-to-failure escalation with `@escalate`
 - Baseline mode for legacy adoption
+- Trend reporting of violation counts over time
 - Changed-files mode for CI and large repositories
 - GitHub Actions inline PR annotations
 - CODEOWNERS-aware violation routing
@@ -154,8 +155,10 @@ Use `archetype doctor .` to inspect what Archetype detected.
 | `archetype check [path] --write-baseline <file>` | Write the current violations to a baseline file. |
 | `archetype check [path] --baseline <file>` | Suppress matching baseline violations. |
 | `archetype check [path] --github-annotations` | Emit GitHub Actions inline annotation commands. |
+| `archetype check [path] --record-trend <file>` | Append this run's violation counts to a trend history file. See [Trend Reporting](#trend-reporting). |
 | `archetype doctor [path]` | Explain detected project layout, graph, config, cache, and rule context. |
 | `archetype graph [path] --format mermaid\|json` | Export the discovered import graph. |
+| `archetype trend <file> --format text\|json` | Show violation counts recorded over time. See [Trend Reporting](#trend-reporting). |
 | `archetype install-hook [path]` | Install or update a managed Git pre-commit hook. See [Pre-commit Hook](#pre-commit-hook). |
 
 Common check flag examples:
@@ -367,6 +370,54 @@ archetype check . --baseline archetype-baseline.json
 ```
 
 Matching old violations are suppressed. New blocking violations still fail with exit code `1`.
+
+## Trend Reporting
+
+`archetype check --format json` already reports a violation count for that
+one run. Trend reporting stores that same count over time so you can show
+the story, not just today's pass/fail: "340 violations in January, 210 in
+June, 90 today." No new analysis happens — the count that's already
+computed is just appended to a small history file instead of discarded.
+
+Record one entry per run, in CI or locally:
+
+```bash
+archetype check . --record-trend archetype-trend.jsonl
+```
+
+Each run appends one JSON line — safe to run repeatedly, nothing is
+overwritten. Pairs naturally with [baseline mode](#baseline-mode) for
+tracking a legacy-debt paydown over time.
+
+View the recorded history:
+
+```bash
+archetype trend archetype-trend.jsonl
+```
+
+```text
+Recorded at             Violations  Passed  Failed  Warned
+----------------------------------------------------------
+2026-01-01T00:00:00Z           340       0       1       0
+2026-04-01T00:00:00Z           260       0       1       0
+2026-06-01T00:00:00Z           210       0       1       0
+2026-08-29T00:00:00Z            90       1       0       0
+
+Trend (4 runs): █▆▄▁
+340 -> 90 violations (down 73.5%)
+```
+
+Or get the raw series for your own dashboard/spreadsheet:
+
+```bash
+archetype trend archetype-trend.jsonl --format json
+```
+
+The trend file is a plain [JSON Lines](https://jsonlines.org/) file — one
+independent JSON object per line — so a CI job can append to it without
+ever reading the existing history first. Concurrent writes from parallel
+CI jobs aren't guaranteed to interleave safely; record trend data from a
+single job per run if that matters for your setup.
 
 ## Changed-Files Mode
 
