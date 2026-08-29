@@ -13,6 +13,9 @@
   The CLI now forces UTF-8 stdout/stderr on Windows.
 
 ### Added
+- Added a `py.typed` marker and the `Typing :: Typed` classifier, so type
+  checkers (mypy, pyright) treat Archetype as a typed package instead of
+  falling back to `Any` for everything it exports.
 - Added `layers([...]).are_adjacent()`, a strict variant of `are_ordered()`
   that also rejects layer-skipping imports (e.g. an API layer reaching
   straight past a services layer into the DB layer), requiring every
