@@ -12,6 +12,11 @@
   codepage such as cp1252 that cannot represent report symbols like `✓`.
   The CLI now forces UTF-8 stdout/stderr on Windows.
 
+### Changed
+- Raised the PyPI `Development Status` classifier from `3 - Alpha` to
+  `4 - Beta`, and added explicit `Programming Language :: Python :: 3.11`
+  / `3.12` classifiers matching the versions actually tested in CI.
+
 ### Added
 - Added a `py.typed` marker and the `Typing :: Typed` classifier, so type
   checkers (mypy, pyright) treat Archetype as a typed package instead of
