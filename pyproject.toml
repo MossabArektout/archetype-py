@@ -37,6 +37,7 @@ Documentation = "https://github.com/MossabArektout/archetype-py"
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "pytest-cov",
   "hatch",
 ]
 # Benchmarks are run with `python benchmarks/run_benchmarks.py`
@@ -53,9 +54,32 @@ archetype = "archetype.plugin.pytest_plugin"
 packages = ["archetype"]
 
 [tool.pytest.ini_options]
-addopts = "-m \"not benchmark\""
+# -p no:archetype: archetype registers itself as a pytest11 plugin (see
+# [project.entry-points.pytest11] above) so `archetype check` rules can run
+# as pytest items in *other* projects. Loading that plugin here too pulls in
+# archetype.analysis.models, archetype.config, archetype.dsl.query, and
+# archetype.reporter before pytest-cov starts tracing, so coverage.py can
+# never credit their module-level lines -- inflating "0% covered" on files
+# that are, in fact, exercised by nearly every test. It has no effect on
+# what tests run: nothing under tests/ is named architecture.py, and
+# test_plugin.py exercises the plugin through its own isolated
+# pytester.runpytest_inprocess() sessions, which load it independently.
+addopts = "-m \"not benchmark\" -p no:archetype"
 pythonpath = ["."]
 testpaths = ["tests"]
 markers = [
     "benchmark: marks tests as benchmarks (deselect with '-m not benchmark')",
+]
+
+[tool.coverage.run]
+source = ["archetype"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 78
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
 ]
