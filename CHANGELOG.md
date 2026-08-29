@@ -16,6 +16,13 @@
 - Raised the PyPI `Development Status` classifier from `3 - Alpha` to
   `4 - Beta`, and added explicit `Programming Language :: Python :: 3.11`
   / `3.12` classifiers matching the versions actually tested in CI.
+- Expanded CI to run the full test suite on Windows and macOS in addition
+  to Linux, and added Python 3.13 and 3.14 to the version matrix (12
+  OS/version combinations total). Also added `Programming Language ::
+  Python :: 3.13` / `3.14` classifiers now that those versions are
+  covered. Previously CI only ran on `ubuntu-latest` with Python 3.11 and
+  3.12, which is how a Windows-only crash (see Fixed, above) went
+  undetected until it was found manually.
 
 ### Added
 - Added a `py.typed` marker and the `Typing :: Typed` classifier, so type
