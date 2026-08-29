@@ -279,7 +279,7 @@ def format_results_json(
                         "module": violation.module,
                         "file": None
                         if str(violation.file) in {"", "<unknown>"}
-                        else str(violation.file),
+                        else Path(violation.file).as_posix(),
                         "line": violation.line,
                         "target": _extract_target(violation),
                         "message": violation.message,

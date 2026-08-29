@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -1626,7 +1627,12 @@ def test_cli_install_hook_creates_pre_commit_hook(
     assert content.startswith("#!/bin/sh")
     assert "# >>> archetype pre-commit hook >>>" in content
     assert 'archetype check "$repo_root"' in content
-    assert hook_path.stat().st_mode & 0o111
+    if sys.platform != "win32":
+        # os.chmod's execute bits are a POSIX-only concept; NTFS has no
+        # equivalent, so Python's chmod on native Windows is a no-op here.
+        # The hook itself is only ever run through sh (Linux/macOS/WSL/Git
+        # Bash), where this bit is what actually matters.
+        assert hook_path.stat().st_mode & 0o111
 
 
 def test_cli_install_hook_is_idempotent(
