@@ -2,7 +2,18 @@
 
 ## Unreleased
 
+### Documentation
+- Filled in `BENCHMARKS.md` with real measurements from
+  `benchmarks/run_benchmarks.py` (previously a stub table of dashes),
+  including notes on what the numbers do and don't represent (a cold,
+  no-cache run; roughly 10-15% run-to-run variance at this scale).
+
 ### Fixed
+- Fixed a flaky test suite failure on macOS CI (no product behavior
+  changed): five rule-timeout tests used a 10ms timeout against a 50ms
+  sleep, a 40ms margin too tight for a shared/virtualized CI runner's
+  scheduling jitter, occasionally reporting a rule as passed when it
+  should have timed out. Widened the margin to 50ms vs 500ms.
 - `archetype check --format json` now always emits forward-slash paths in
   the `file` field, matching the documented contract. Previously, running
   on native Windows Python emitted backslash paths instead.
@@ -25,6 +36,14 @@
   undetected until it was found manually.
 
 ### Added
+- Added test coverage measurement (`pytest-cov`): CI now runs the suite
+  with branch coverage and fails if it drops below 78% (current: ~84%).
+  Coverage config excludes `archetype`'s own `pytest11` plugin from the
+  outer test run (`-p no:archetype`), since loading it there imports
+  several modules before coverage.py starts tracing and would otherwise
+  misreport them as 0% covered; this has no effect on which tests run.
+  A `coverage.xml` artifact is uploaded from the Linux/3.12 CI job for
+  inspection or later use with an external coverage service.
 - Added a `py.typed` marker and the `Typing :: Typed` classifier, so type
   checkers (mypy, pyright) treat Archetype as a typed package instead of
   falling back to `Any` for everything it exports.

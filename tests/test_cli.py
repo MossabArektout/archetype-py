@@ -462,9 +462,9 @@ def test_cli_exits_one_when_rule_times_out(tmp_path: Path) -> None:
                 "import time",
                 "from archetype import rule",
                 "",
-                "@rule('slow-rule', timeout=0.01)",
+                "@rule('slow-rule', timeout=0.05)",
                 "def _slow_rule() -> None:",
-                "    time.sleep(0.05)",
+                "    time.sleep(0.5)",
                 "",
             ]
         ),
@@ -485,9 +485,9 @@ def test_cli_prints_timeout_indicator_with_clock_and_duration(tmp_path: Path) ->
                 "import time",
                 "from archetype import rule",
                 "",
-                "@rule('slow-rule', timeout=0.01)",
+                "@rule('slow-rule', timeout=0.05)",
                 "def _slow_rule() -> None:",
-                "    time.sleep(0.05)",
+                "    time.sleep(0.5)",
                 "",
             ]
         ),
@@ -497,7 +497,7 @@ def test_cli_prints_timeout_indicator_with_clock_and_duration(tmp_path: Path) ->
 
     result = runner.invoke(cli, ["check", str(project_path)])
 
-    assert "⏱ slow-rule (timed out after 0.01s)" in result.output
+    assert "⏱ slow-rule (timed out after 0.05s)" in result.output
     assert "Summary: 0 passed, 0 failed, 0 warned, 0 skipped, 1 timeout, 1 total rules." in result.output
 
 

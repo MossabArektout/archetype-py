@@ -154,6 +154,22 @@ def write_benchmarks_md(results: list[BenchmarkResult]) -> None:
             "- `rules ms`: Time to execute `no_cycles`, `layers`, and `must_not_import` rules.",
             "- `total ms`: Sum of parse, graph, and rules timing.",
             "",
+            "## Notes",
+            "",
+            "- These numbers measure a **cold** run: `graph ms` calls "
+            "`build_import_graph` directly, bypassing the import graph cache "
+            "(see `archetype check --no-cache`). A real `archetype check` run "
+            "on an unchanged project reuses the cached graph and is "
+            "substantially faster than the `graph ms` figure above suggests; "
+            "these results represent the worst case (first run, or after any "
+            "file changes).",
+            "- Numbers vary run-to-run (background load, disk I/O for the "
+            "synthetic project's temp files) by roughly 10-15% at this scale; "
+            "treat this as an order-of-magnitude reference, not a precise "
+            "regression baseline. Exact regression tracking is handled "
+            "separately by `pytest -m benchmark` "
+            "(`benchmarks/test_performance_regression.py`).",
+            "",
             "## Runtime Metadata",
             "",
             f"- Python: `{sys.version}`",
