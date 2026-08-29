@@ -197,6 +197,7 @@ Warnings do not fail the run — this example exits `0`. See
 - Layer ordering rules
 - Import cycle detection
 - Protected internal module boundaries
+- Public API enforcement from a package's declared `__all__`
 - Naming convention checks
 - Rule groups and targeted execution
 - Warning-only rules
@@ -219,6 +220,33 @@ Warnings do not fail the run — this example exits `0`. See
 - `.pre-commit-hooks.yaml` manifest for the [pre-commit framework](https://pre-commit.com/)
 - Shell completion for bash, zsh, and fish via `archetype completion`
 - Shared, installable rule packs via `archetype.rule.use()`
+
+## Public API Enforcement
+
+`module(...).only_imported_within(...)` protects a module by name. `public_api(...)` protects it by declared interface: a package states what it exposes with `__all__`, and any import that reaches past that — straight into an internal submodule — is a violation, regardless of which module is doing the reaching.
+
+```python
+# billing/__init__.py
+from .invoice import Invoice
+
+__all__ = ["Invoice"]
+```
+
+```python
+from archetype import rule
+from archetype.rules import public_api
+
+@rule("billing-public-interface")
+def billing_public_interface() -> None:
+    public_api("billing").enforce()
+```
+
+```python
+from billing import Invoice          # OK: goes through the declared interface
+from billing.invoice import Invoice  # Violation: reaches past it into billing.invoice
+```
+
+A submodule can be declared public in its own right by naming it in `__all__` (`__all__ = ["Invoice", "reporting"]` allows `import billing.reporting` and everything beneath it). `public_api(...)` requires the target package to declare `__all__` as a literal list or tuple of strings in its `__init__.py`; it raises a clear error naming the file if `__all__` is missing, computed, or the package has no `__init__.py` (namespace packages are not supported, since there is nowhere to declare an interface). A pattern can also match several packages at once, e.g. `public_api("myapp.*")` to enforce every top-level package's interface in one rule.
 
 ## Supported Layouts
 

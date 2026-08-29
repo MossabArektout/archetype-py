@@ -13,6 +13,11 @@
   The CLI now forces UTF-8 stdout/stderr on Windows.
 
 ### Added
+- Added `public_api(pattern).enforce()` for declaring and enforcing a
+  package's public interface from its `__all__`. Any import that reaches
+  past a package's declared `__all__` into an internal submodule is a
+  violation, regardless of which module does the reaching. A submodule can
+  itself be declared public by listing its name in `__all__`.
 - Added `archetype completion [bash|zsh|fish]` for generating shell
   tab-completion scripts (auto-detects the shell from `$SHELL` when omitted).
 - Added a `.pre-commit-hooks.yaml` manifest so Archetype can be added to

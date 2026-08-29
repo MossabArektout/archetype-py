@@ -52,6 +52,7 @@ def layer_order() -> None:
 - Transitive dependency checks with `must_not_depend_on`
 - Layer order enforcement with `layers(...).are_ordered()`
 - Import cycle detection with `no_cycles(...)`
+- Public API enforcement from a package's declared `__all__` with `public_api(...).enforce()`
 - Rule decorators: `@rule`, `@warn`, `@skip`, `@since`
 - Rule grouping via `group("...")` and targeted execution with `--group`
 - `archetype init` scaffolding for starter `architecture.py`
