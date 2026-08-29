@@ -292,9 +292,9 @@ def test_rule_with_timeout_completing_in_time_passes_normally() -> None:
 
 
 def test_rule_exceeding_timeout_is_marked_timed_out_and_failed() -> None:
-    @rule("slow-rule", timeout=0.01)
+    @rule("slow-rule", timeout=0.05)
     def slow_rule() -> None:
-        time.sleep(0.05)
+        time.sleep(0.5)
 
     results = registry.run_all()
 
@@ -304,14 +304,14 @@ def test_rule_exceeding_timeout_is_marked_timed_out_and_failed() -> None:
 
 
 def test_timed_out_rule_result_includes_timeout_seconds() -> None:
-    @rule("slow-rule", timeout=0.01)
+    @rule("slow-rule", timeout=0.05)
     def slow_rule() -> None:
-        time.sleep(0.05)
+        time.sleep(0.5)
 
     results = registry.run_all()
 
     assert len(results) == 1
-    assert results[0].timeout_seconds == 0.01
+    assert results[0].timeout_seconds == 0.05
 
 
 def test_rule_without_timeout_avoids_thread_execution_path(monkeypatch) -> None:
@@ -450,9 +450,9 @@ def test_use_rejects_unsupported_argument_types() -> None:
 
 
 def test_registry_continues_executing_rules_after_timeout() -> None:
-    @rule("slow-rule", timeout=0.01)
+    @rule("slow-rule", timeout=0.05)
     def slow_rule() -> None:
-        time.sleep(0.05)
+        time.sleep(0.5)
 
     @rule("fast-rule")
     def fast_rule() -> None:

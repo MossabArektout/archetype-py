@@ -9,6 +9,11 @@
   no-cache run; roughly 10-15% run-to-run variance at this scale).
 
 ### Fixed
+- Fixed a flaky test suite failure on macOS CI (no product behavior
+  changed): five rule-timeout tests used a 10ms timeout against a 50ms
+  sleep, a 40ms margin too tight for a shared/virtualized CI runner's
+  scheduling jitter, occasionally reporting a rule as passed when it
+  should have timed out. Widened the margin to 50ms vs 500ms.
 - `archetype check --format json` now always emits forward-slash paths in
   the `file` field, matching the documented contract. Previously, running
   on native Windows Python emitted backslash paths instead.
