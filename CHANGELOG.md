@@ -17,6 +17,12 @@
   `CODEOWNERS`, or `docs/CODEOWNERS` file is present, violations are
   annotated with the owning team/user in text, JSON, SARIF, and GitHub
   Actions inline annotation output. No configuration required.
+- Added trend reporting: `archetype check --record-trend <file>` appends
+  each run's violation counts to a JSON Lines history file, and
+  `archetype trend <file>` renders it as a table with a sparkline and the
+  overall change from first to latest run (or `--format json` for raw
+  series data). No new analysis — reuses the count already computed for
+  the JSON report contract.
 
 ### Documentation
 - Added GitLab CI and Azure Pipelines examples alongside the existing

@@ -300,6 +300,53 @@ def test_graph_command_exports_json_import_graph(tmp_path: Path) -> None:
     )
 
 
+def test_check_record_trend_and_trend_command_round_trip(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    trend_path = tmp_path / "trend.jsonl"
+    runner = CliRunner()
+
+    check_result = runner.invoke(
+        cli, ["check", str(project_path), "--record-trend", str(trend_path)]
+    )
+    assert check_result.exit_code == 1
+    assert trend_path.is_file()
+
+    # A second run appends rather than overwriting.
+    runner.invoke(cli, ["check", str(project_path), "--record-trend", str(trend_path)])
+
+    trend_result = runner.invoke(cli, ["trend", str(trend_path)])
+    assert trend_result.exit_code == 0
+    assert "Trend (2 runs):" in trend_result.output
+
+    trend_json_result = runner.invoke(cli, ["trend", str(trend_path), "--format", "json"])
+    assert trend_json_result.exit_code == 0
+    entries = json.loads(trend_json_result.output)
+    assert len(entries) == 2
+    assert entries[0]["violations"]["total"] == 1
+    assert entries[0]["summary"]["failed"] == 1
+
+
+def test_trend_command_errors_on_missing_file(tmp_path: Path) -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["trend", str(tmp_path / "missing.jsonl")])
+
+    assert result.exit_code != 0
+
+
 def test_cli_exits_zero_when_only_warned_rules_have_violations(tmp_path: Path) -> None:
     project_path = _make_project_copy(tmp_path)
     (project_path / "architecture.py").write_text(
