@@ -1813,3 +1813,91 @@ def test_cli_github_annotations_flag_emits_github_error_commands(
 
     assert result.exit_code == 1
     assert "::error file=simple_project/api.py,line=7,title=archetype%3A api-must-not-import-db::" in result.output
+
+
+def test_cli_completion_prints_bash_script_for_explicit_shell(monkeypatch) -> None:
+    # BashComplete.source() shells out to a real `bash --version` to check
+    # compatibility; that's an environment-dependent side effect unit tests
+    # shouldn't depend on, so stub it out.
+    monkeypatch.setattr(
+        "click.shell_completion.BashComplete._check_version", lambda self: None
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["completion", "bash"])
+
+    assert result.exit_code == 0
+    assert "_ARCHETYPE_COMPLETE=bash_complete" in result.output
+    assert "complete -o nosort -F _archetype_completion archetype" in result.output
+
+
+def test_cli_completion_prints_zsh_script_for_explicit_shell() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["completion", "zsh"])
+
+    assert result.exit_code == 0
+    assert "#compdef archetype" in result.output
+
+
+def test_cli_completion_prints_fish_script_for_explicit_shell() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["completion", "fish"])
+
+    assert result.exit_code == 0
+    assert "complete --no-files --command archetype" in result.output
+
+
+def test_cli_completion_rejects_unsupported_explicit_shell() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["completion", "powershell"])
+
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
+
+
+def test_cli_completion_auto_detects_shell_from_env_var(monkeypatch) -> None:
+    monkeypatch.setenv("SHELL", "/usr/bin/zsh")
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["completion"])
+
+    assert result.exit_code == 0
+    assert "#compdef archetype" in result.output
+
+
+def test_cli_completion_auto_detects_shell_with_exe_suffix(monkeypatch) -> None:
+    # Git Bash / MSYS on Windows sets $SHELL to a path like
+    # /usr/bin/bash.exe rather than /usr/bin/bash.
+    monkeypatch.setattr(
+        "click.shell_completion.BashComplete._check_version", lambda self: None
+    )
+    monkeypatch.setenv("SHELL", "/usr/bin/bash.exe")
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["completion"])
+
+    assert result.exit_code == 0
+    assert "_ARCHETYPE_COMPLETE=bash_complete" in result.output
+
+
+def test_cli_completion_errors_when_shell_env_var_missing(monkeypatch) -> None:
+    monkeypatch.delenv("SHELL", raising=False)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["completion"])
+
+    assert result.exit_code == 1
+    assert "could not detect your shell" in result.output
+
+
+def test_cli_completion_errors_when_detected_shell_is_unsupported(monkeypatch) -> None:
+    monkeypatch.setenv("SHELL", "/bin/dash")
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["completion"])
+
+    assert result.exit_code == 1
+    assert "unsupported shell 'dash'" in result.output

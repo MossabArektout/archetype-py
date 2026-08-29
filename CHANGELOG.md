@@ -13,6 +13,8 @@
   The CLI now forces UTF-8 stdout/stderr on Windows.
 
 ### Added
+- Added `archetype completion [bash|zsh|fish]` for generating shell
+  tab-completion scripts (auto-detects the shell from `$SHELL` when omitted).
 - Added a `.pre-commit-hooks.yaml` manifest so Archetype can be added to
   `.pre-commit-config.yaml` like any other pre-commit tool, instead of only
   through the built-in `archetype install-hook` installer.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from typing import TypeVar
 
 import click
 from click.core import ParameterSource
+from click.shell_completion import get_completion_class
 
 from archetype.baseline import (
     ViolationCounts,
@@ -844,3 +846,48 @@ def install_hook(path: Path) -> None:
         click.echo(f"Archetype pre-commit hook already installed at {hook_path}")
     click.echo(f"Hook command: archetype check {repo_root}")
     raise SystemExit(0)
+
+
+def _detect_shell() -> str | None:
+    shell_path = os.environ.get("SHELL")
+    if not shell_path:
+        return None
+    # .stem (not .name) so Git Bash/MSYS on Windows, where $SHELL is
+    # something like /usr/bin/bash.exe, still resolves to "bash".
+    return Path(shell_path).stem
+
+
+@cli.command("completion")
+@click.argument("shell", required=False, type=click.Choice(["bash", "zsh", "fish"]))
+def completion(shell: str | None) -> None:
+    """Print a shell completion script for SHELL (auto-detected if omitted).
+
+    \b
+    Enable it by evaluating the script in your shell's startup file:
+        eval "$(archetype completion bash)"    # ~/.bashrc
+        eval "$(archetype completion zsh)"     # ~/.zshrc
+        archetype completion fish | source     # ~/.config/fish/config.fish
+
+    \b
+    Or generate it directly for the current session:
+        eval "$(_ARCHETYPE_COMPLETE=bash_source archetype)"
+    """
+    resolved_shell = shell or _detect_shell()
+    if resolved_shell is None:
+        click.echo(
+            "Error: could not detect your shell (no SHELL environment variable). "
+            "Specify one explicitly: archetype completion {bash|zsh|fish}",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    completion_class = get_completion_class(resolved_shell)
+    if completion_class is None:
+        click.echo(
+            f"Error: unsupported shell '{resolved_shell}'. "
+            "Supported shells: bash, zsh, fish.",
+            err=True,
+        )
+        raise SystemExit(1)
+    complete = completion_class(cli, {}, "archetype", "_ARCHETYPE_COMPLETE")
+    click.echo(complete.source())
