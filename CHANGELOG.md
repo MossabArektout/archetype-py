@@ -13,6 +13,10 @@
   transition from warning-only to a hard failure automatically on a given
   date, for rolling out new org-wide rules without a flag day. Added an
   `escalate_date` field to the JSON and SARIF report contracts.
+- Added CODEOWNERS-aware violation routing: when a `.github/CODEOWNERS`,
+  `CODEOWNERS`, or `docs/CODEOWNERS` file is present, violations are
+  annotated with the owning team/user in text, JSON, SARIF, and GitHub
+  Actions inline annotation output. No configuration required.
 
 ### Documentation
 - Added GitLab CI and Azure Pipelines examples alongside the existing

@@ -119,6 +119,34 @@ def test_cli_exits_one_when_any_rule_fails(tmp_path: Path) -> None:
     assert "Summary: 0 passed, 1 failed, 0 warned, 0 skipped, 1 total rules." in result.output
 
 
+def test_cli_routes_violation_to_codeowners_owner(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    github_dir = project_path / ".github"
+    github_dir.mkdir()
+    (github_dir / "CODEOWNERS").write_text(
+        "simple_project/api.py @acme/api-team\n", encoding="utf-8"
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 1
+    assert "@acme/api-team" in result.output
+
+
 def test_cli_prints_violation_messages_for_failing_rules(tmp_path: Path) -> None:
     project_path = _make_project_copy(tmp_path)
     (project_path / "architecture.py").write_text(
