@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+- `archetype check --format json` now always emits forward-slash paths in
+  the `file` field, matching the documented contract. Previously, running
+  on native Windows Python emitted backslash paths instead.
+
 ### Added
 - Added per-rule `error`, `warning`, and `off` policies via `archetype.toml`
   for gradual rule adoption and rollout control. (#64)
