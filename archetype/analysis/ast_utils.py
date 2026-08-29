@@ -3,6 +3,18 @@
 from __future__ import annotations
 
 import ast
+from pathlib import Path
+
+
+def read_source(file_path: Path) -> bytes:
+    """Read a Python source file as bytes, ready for ast.parse.
+
+    Returning bytes lets CPython apply its own BOM handling and PEP 263
+    encoding detection, matching what a real import does. Decoding as utf-8
+    first would reject valid sources that carry a BOM or declare a different
+    encoding.
+    """
+    return file_path.read_bytes()
 
 
 def get_class_names(tree: ast.AST) -> list[str]:

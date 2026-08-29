@@ -9,6 +9,7 @@ from typing import Iterable
 
 import networkx as nx
 
+from archetype.analysis.ast_utils import read_source
 from archetype.analysis.path_filters import is_path_excluded, normalize_exclude_patterns
 
 _IGNORED_DIRS = {
@@ -194,8 +195,7 @@ def build_import_graph(
 
         graph.add_node(current_module)
 
-        source = file_path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(file_path))
+        tree = ast.parse(read_source(file_path), filename=str(file_path))
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

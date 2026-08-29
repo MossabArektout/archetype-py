@@ -10,6 +10,7 @@ import archetype.dsl.query as query_module
 from archetype.analysis.ast_utils import (
     get_class_names,
     get_top_level_function_names,
+    read_source,
 )
 from archetype.analysis.imports import path_to_module
 from archetype.analysis.models import Violation
@@ -60,7 +61,7 @@ class ClassesInQuery:
         regex = re.compile(name_pattern)
 
         for file_path in self.files:
-            tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+            tree = ast.parse(read_source(file_path), filename=str(file_path))
             for class_name in get_class_names(tree):
                 if not regex.fullmatch(class_name):
                     violations.append(
@@ -95,7 +96,7 @@ class FunctionsInQuery:
         violations: list[Violation] = []
 
         for file_path in self.files:
-            tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+            tree = ast.parse(read_source(file_path), filename=str(file_path))
             top_level_functions = get_top_level_function_names(tree)
             if function_name not in top_level_functions:
                 violations.append(

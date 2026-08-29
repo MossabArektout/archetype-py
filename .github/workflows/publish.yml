@@ -14,7 +14,7 @@ jobs:
     steps:
       # Checkout repository contents for test execution.
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ github.token }}
           ref: ${{ github.ref }}
@@ -22,7 +22,7 @@ jobs:
 
       # Install Python runtime used for tests and packaging checks.
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
@@ -46,7 +46,7 @@ jobs:
     steps:
       # Checkout repository contents so the package can be built.
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ github.token }}
           ref: ${{ github.ref }}
@@ -54,7 +54,7 @@ jobs:
 
       # Set up Python for building distribution artifacts.
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
@@ -69,4 +69,6 @@ jobs:
       # Before this works, configure Trusted Publishing in your PyPI project:
       # https://pypi.org/manage/account/publishing
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          attestations: true

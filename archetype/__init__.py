@@ -1,7 +1,7 @@
 """Archetype public package exports."""
 
 from archetype.dsl.query import imports, load_project
-from archetype.rule import group, registry, rule, since, skip, warn
+from archetype.rule import escalate, group, registry, rule, since, skip, use, warn
 from archetype.rules import module
 
 __all__ = [
@@ -10,6 +10,8 @@ __all__ = [
     "warn",
     "skip",
     "since",
+    "escalate",
+    "use",
     "registry",
     "imports",
     "load_project",

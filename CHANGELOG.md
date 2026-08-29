@@ -2,19 +2,47 @@
 
 ## Unreleased
 
+### Fixed
+- `archetype check --format json` now always emits forward-slash paths in
+  the `file` field, matching the documented contract. Previously, running
+  on native Windows Python emitted backslash paths instead.
+
 ### Added
 - Added per-rule `error`, `warning`, and `off` policies via `archetype.toml`
   for gradual rule adoption and rollout control. (#64)
+- Added `archetype.rule.use()` for adopting shared, installable rule
+  packages across multiple repositories without copy-pasting
+  `architecture.py` rules. Registering two different rules under the same
+  name now raises a clear error instead of silently shadowing one of them.
+- Added `@escalate(warn_until="YYYY-MM-DD")` for scheduling a rule to
+  transition from warning-only to a hard failure automatically on a given
+  date, for rolling out new org-wide rules without a flag day. Added an
+  `escalate_date` field to the JSON and SARIF report contracts.
+- Added CODEOWNERS-aware violation routing: when a `.github/CODEOWNERS`,
+  `CODEOWNERS`, or `docs/CODEOWNERS` file is present, violations are
+  annotated with the owning team/user in text, JSON, SARIF, and GitHub
+  Actions inline annotation output. No configuration required.
+- Added trend reporting: `archetype check --record-trend <file>` appends
+  each run's violation counts to a JSON Lines history file, and
+  `archetype trend <file>` renders it as a table with a sparkline and the
+  overall change from first to latest run (or `--format json` for raw
+  series data). No new analysis — reuses the count already computed for
+  the JSON report contract.
 
 ### Documentation
+- Added GitLab CI and Azure Pipelines examples alongside the existing
+  GitHub Actions one, so teams on those platforms don't have to translate
+  the job syntax themselves.
 - Documented current `archetype check` flags, including `--group`,
   `--format json`, `--quiet`, and `--no-cache` examples. (#42)
 - Added a FastAPI example under `examples/fastapi/` with a realistic
   `architecture.py` covering layer ordering, forbidden imports, and cycle
   detection. (#71)
-- Added an Example Output section showing passing, failing, and unmatched
-  pattern warning runs, and corrected the stale sample output in the Minimal
-  Example section. (#77)
+- Documented the built-in `archetype install-hook` pre-commit hook, including
+  verification steps, `PATH` requirements, and coexistence with existing
+  hooks. (#76)
+- Added an `examples/shared-rules/` walkthrough for publishing an
+  installable, shared rule package and adopting it across repositories.
 
 ## 0.4.0 - 2026-07-05
 

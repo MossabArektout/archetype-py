@@ -22,6 +22,7 @@ from archetype.baseline import (
     load_baseline,
     write_baseline,
 )
+from archetype.analysis.codeowners import load_codeowners
 from archetype.analysis.git_utils import get_files_changed_from
 from archetype.analysis.cache import (
     compute_file_signatures,
@@ -47,6 +48,12 @@ from archetype.reporter import (
     print_results,
 )
 from archetype.rule import registry
+from archetype.trend import (
+    append_trend_entry,
+    build_trend_entry,
+    format_trend_text,
+    load_trend_entries,
+)
 
 T = TypeVar("T")
 _HOOK_BEGIN_MARKER = "# >>> archetype pre-commit hook >>>"
@@ -269,6 +276,16 @@ def cli() -> None:
     default=False,
     help="Emit GitHub Actions inline PR annotations for violations.",
 )
+@click.option(
+    "--record-trend",
+    "record_trend_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Append this run's violation counts as one record to a JSON Lines "
+        "trend history file. View it with `archetype trend <file>`."
+    ),
+)
 @click.pass_context
 def check(
     ctx: click.Context,
@@ -283,6 +300,7 @@ def check(
     workers: int | None,
     changed_from: str | None,
     github_annotations: bool,
+    record_trend_path: Path | None,
 ) -> None:
     """Run architecture rules against a Python project."""
     project_path = path.resolve()
@@ -426,6 +444,16 @@ def check(
         for result in results
         if (not result.passed and not result.warned) or result.timed_out
     )
+    codeowners = load_codeowners(project_path)
+    if record_trend_path is not None:
+        entry = build_trend_entry(results, violation_counts)
+        try:
+            append_trend_entry(record_trend_path.resolve(), entry)
+        except OSError as exc:
+            click.echo(
+                f"Error: failed to record trend to {record_trend_path}: {exc}", err=True
+            )
+            raise SystemExit(1) from exc
     if effective_output_format == "json":
         click.echo(
             json.dumps(
@@ -433,6 +461,7 @@ def check(
                     results,
                     violation_counts=violation_counts,
                     scope=scope_metadata,
+                    codeowners=codeowners,
                 ),
                 ensure_ascii=False,
                 indent=2,
@@ -445,6 +474,7 @@ def check(
                     results,
                     project_root=project_path,
                     scope=scope_metadata,
+                    codeowners=codeowners,
                 ),
                 ensure_ascii=False,
                 indent=2,
@@ -456,10 +486,12 @@ def check(
                 f"Scope: changed-files mode from '{changed_from}' "
                 f"({scope_metadata['changed_files_count']} changed Python files)"
             )
-        print_results(results, quiet=bool(effective_quiet))
+        print_results(results, quiet=bool(effective_quiet), codeowners=codeowners)
 
     if github_annotations:
-        for annotation in format_github_annotations(results, project_root=project_path):
+        for annotation in format_github_annotations(
+            results, project_root=project_path, codeowners=codeowners
+        ):
             click.echo(annotation, err=True)
     raise SystemExit(0 if failed == 0 else 1)
 
@@ -653,6 +685,35 @@ def graph(path: Path, output_format: str, exclude_patterns: tuple[str, ...]) -> 
         click.echo(json.dumps(_format_graph_json(import_graph), ensure_ascii=False, indent=2))
     else:
         click.echo(_format_graph_mermaid(import_graph))
+    raise SystemExit(0)
+
+
+@cli.command("trend")
+@click.argument(
+    "path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    show_default=True,
+    help="Trend report output format.",
+)
+def trend(path: Path, output_format: str) -> None:
+    """Show violation counts recorded over time by `check --record-trend`."""
+    try:
+        entries = load_trend_entries(path.resolve())
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    if output_format == "json":
+        click.echo(json.dumps(entries, ensure_ascii=False, indent=2))
+    else:
+        click.echo(format_trend_text(entries))
     raise SystemExit(0)
 
 

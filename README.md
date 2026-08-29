@@ -2,6 +2,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/archetype-py/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/MossabArektout/archetype-py/blob/main/LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/MossabArektout/archetype-py/ci.yml?branch=main&label=ci)](https://github.com/MossabArektout/archetype-py/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/MossabArektout/archetype-py/badge)](https://securityscorecards.dev/viewer/?uri=github.com/MossabArektout/archetype-py)
 
 # archetype-py
 
@@ -201,9 +202,12 @@ Warnings do not fail the run — this example exits `0`. See
 - Warning-only rules
 - Temporary skips with reasons
 - Date-scoped rules with `@since`
+- Scheduled warning-to-failure escalation with `@escalate`
 - Baseline mode for legacy adoption
+- Trend reporting of violation counts over time
 - Changed-files mode for CI and large repositories
 - GitHub Actions inline PR annotations
+- CODEOWNERS-aware violation routing
 - Project diagnostics with `archetype doctor`
 - Import graph export with `archetype graph`
 - Text, JSON, and SARIF report formats
@@ -212,6 +216,7 @@ Warnings do not fail the run — this example exits `0`. See
 - Import graph caching
 - Pytest plugin support
 - Git pre-commit hook installer
+- Shared, installable rule packs via `archetype.rule.use()`
 
 ## Supported Layouts
 
@@ -240,9 +245,11 @@ Use `archetype doctor .` to inspect what Archetype detected.
 | `archetype check [path] --write-baseline <file>` | Write the current violations to a baseline file. |
 | `archetype check [path] --baseline <file>` | Suppress matching baseline violations. |
 | `archetype check [path] --github-annotations` | Emit GitHub Actions inline annotation commands. |
+| `archetype check [path] --record-trend <file>` | Append this run's violation counts to a trend history file. See [Trend Reporting](#trend-reporting). |
 | `archetype doctor [path]` | Explain detected project layout, graph, config, cache, and rule context. |
 | `archetype graph [path] --format mermaid\|json` | Export the discovered import graph. |
-| `archetype install-hook [path]` | Install or update a managed Git pre-commit hook. |
+| `archetype trend <file> --format text\|json` | Show violation counts recorded over time. See [Trend Reporting](#trend-reporting). |
+| `archetype install-hook [path]` | Install or update a managed Git pre-commit hook. See [Pre-commit Hook](#pre-commit-hook). |
 
 Common check flag examples:
 
@@ -273,9 +280,10 @@ Rules are plain Python functions registered with decorators.
 | `@warn` | Report violations without failing the exit code. | `@warn` |
 | `@skip` / `@skip(reason="...")` | Temporarily skip a rule. | `@skip(reason="Refactor in progress")` |
 | `@since("YYYY-MM-DD")` | Only report violations in files modified after a date. | `@since("2026-01-01")` |
+| `@escalate(warn_until="YYYY-MM-DD")` | Warning-only through the date, then a hard failure automatically. | `@escalate(warn_until="2026-11-01")` |
 | `group("name")` | Assign enclosed rules to a group. | `with group("Layer boundaries"):` |
 
-Decorator order tip: write `@rule(...)` as the top decorator, above wrappers such as `@warn`, `@skip`, or `@since`.
+Decorator order tip: write `@rule(...)` as the top decorator, above wrappers such as `@warn`, `@skip`, `@since`, or `@escalate`.
 
 ```python
 @rule("warning-example")
@@ -283,6 +291,80 @@ Decorator order tip: write `@rule(...)` as the top decorator, above wrappers suc
 def warning_example() -> None:
     ...
 ```
+
+## Gradual Severity Escalation
+
+Rolling out a brand-new architecture rule org-wide as a hard failure on day
+one blocks every pull request that happens to touch an existing violation
+at once. `@escalate` schedules the transition instead: the rule is
+warning-only up to a deadline, then becomes a hard failure automatically
+from that date on, with no code or config change needed on the day itself.
+
+```python
+@rule("no-legacy-imports")
+@escalate(warn_until="2026-11-01")
+def no_legacy_imports() -> None:
+    imports("myapp").must_not_import("myapp.legacy")
+```
+
+Through 2026-11-01 (inclusive), violations show up as warnings — visible
+in output, but they don't fail the exit code, same as `@warn`. From
+2026-11-02 onward, the same rule fails the build on any remaining
+violation.
+
+This differs from manually changing a rule's `archetype.toml` policy from
+`"warning"` to `"error"` on the deadline: nobody has to remember to make
+that edit, and every project depending on a [shared rule package](#shared-inheritable-rule-packs)
+escalates on the same date without needing to coordinate the timing
+themselves.
+
+A rule currently in its warning period is shown with its deadline, for
+example `no-legacy-imports (warn until 2026-11-01)`, and the deadline is
+also included in JSON (`escalate_date`) and SARIF report output.
+
+## Shared, Inheritable Rule Packs
+
+Publish a set of rules as a normal installable Python package so multiple
+repositories can enforce the same policy without copy-pasting
+`architecture.py` between them:
+
+```python
+# In the shared package (e.g. acme_archetype_rules)
+from archetype import group, imports, rule
+
+with group("Org baseline"):
+    @rule("no-direct-db-access-from-api")
+    def no_direct_db_access_from_api() -> None:
+        imports("api").must_not_import("db")
+```
+
+```python
+# In each consuming project's architecture.py
+import acme_archetype_rules
+from archetype.rule import use
+
+use(acme_archetype_rules)
+```
+
+`use()` registers every `@rule`-decorated function found in a module (or
+accepts individual rule functions, or an iterable of them). Unlike a bare
+`import`, it's safe to call even when the shared module was already
+imported earlier in the same process — for example, a monorepo's pytest
+plugin collecting multiple `architecture.py` files against the same shared
+package — because Python only re-executes a module's `@rule` decorators
+the first time it's imported.
+
+A repository can still relax or disable one inherited rule locally without
+touching the shared package, using the normal per-rule `policy` setting in
+`archetype.toml`, matched by the rule's name:
+
+```toml
+[rules."no-direct-db-access-from-api"]
+policy = "warning"
+```
+
+See [`examples/shared-rules/`](./examples/shared-rules) for a complete,
+runnable example.
 
 ## Diagnostics
 
@@ -379,6 +461,54 @@ archetype check . --baseline archetype-baseline.json
 
 Matching old violations are suppressed. New blocking violations still fail with exit code `1`.
 
+## Trend Reporting
+
+`archetype check --format json` already reports a violation count for that
+one run. Trend reporting stores that same count over time so you can show
+the story, not just today's pass/fail: "340 violations in January, 210 in
+June, 90 today." No new analysis happens — the count that's already
+computed is just appended to a small history file instead of discarded.
+
+Record one entry per run, in CI or locally:
+
+```bash
+archetype check . --record-trend archetype-trend.jsonl
+```
+
+Each run appends one JSON line — safe to run repeatedly, nothing is
+overwritten. Pairs naturally with [baseline mode](#baseline-mode) for
+tracking a legacy-debt paydown over time.
+
+View the recorded history:
+
+```bash
+archetype trend archetype-trend.jsonl
+```
+
+```text
+Recorded at             Violations  Passed  Failed  Warned
+----------------------------------------------------------
+2026-01-01T00:00:00Z           340       0       1       0
+2026-04-01T00:00:00Z           260       0       1       0
+2026-06-01T00:00:00Z           210       0       1       0
+2026-08-29T00:00:00Z            90       1       0       0
+
+Trend (4 runs): █▆▄▁
+340 -> 90 violations (down 73.5%)
+```
+
+Or get the raw series for your own dashboard/spreadsheet:
+
+```bash
+archetype trend archetype-trend.jsonl --format json
+```
+
+The trend file is a plain [JSON Lines](https://jsonlines.org/) file — one
+independent JSON object per line — so a CI job can append to it without
+ever reading the existing history first. Concurrent writes from parallel
+CI jobs aren't guaranteed to interleave safely; record trend data from a
+single job per run if that matters for your setup.
+
 ## Changed-Files Mode
 
 Use diff scope for large projects or pull request checks:
@@ -419,6 +549,124 @@ Inline PR annotations:
 - run: archetype check . --github-annotations
 ```
 
+## GitLab CI
+
+The command is the same as anywhere else — install Archetype, then run
+`archetype check .`. Only the surrounding job syntax differs:
+
+```yaml
+archetype:
+  image: python:3.11
+  stage: test
+  script:
+    - python -m pip install archetype-py
+    - archetype check .
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+```
+
+## Azure Pipelines
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "3.11"
+  - script: |
+      python -m pip install archetype-py
+      archetype check .
+    displayName: "Run Archetype"
+```
+
+## Pre-commit Hook
+
+Archetype can install a managed Git pre-commit hook so violations are caught before a commit is created, not after it reaches CI.
+
+```bash
+archetype install-hook .
+```
+
+```
+Installed pre-commit hook at /path/to/project/.git/hooks/pre-commit
+Hook command: archetype check /path/to/project
+```
+
+The hook is written to the repository's `pre-commit` hook path and made executable. The installed block runs `archetype check` against the repository root, so every commit is checked against the full project, not only the staged files.
+
+### Verifying the hook
+
+Make a commit. A clean project reports its summary and the commit proceeds:
+
+```
+$ git commit -m "add service layer"
+Summary: 1 passed, 0 failed, 0 warned, 0 skipped, 1 total rules.
+[main 1a2b3c4] add service layer
+```
+
+A commit that breaks a rule prints the violation and is rejected:
+
+```
+$ git commit -m "add cycle"
+Cycles
+======
+  ✗ no-cycles
+    - myapp/a.py:1
+        imports <unknown>
+  0 passed, 1 failed
+Summary: 0 passed, 1 failed, 0 warned, 0 skipped, 1 total rules.
+```
+
+The commit is not created. Use `git commit --no-verify` to bypass the hook deliberately.
+
+### Requirements and behaviour
+
+`archetype` must be available on `PATH` for the hook to run. The hook checks this first and fails the commit with a clear message rather than passing silently:
+
+```
+archetype: CLI not found on PATH. Install archetype to run checks.
+```
+
+If you install Archetype into a virtualenv, that environment must be active when you commit, or Git tools that run outside it will not find the CLI.
+
+The command is safe to re-run and reports what it did:
+
+| Situation | Result |
+| --- | --- |
+| No hook present | `Installed pre-commit hook at ...` |
+| Archetype block already current | `Archetype pre-commit hook already installed at ...` |
+| Archetype block present but outdated | `Updated Archetype block in pre-commit hook at ...` |
+| Some other hook already present | `Appended Archetype block to existing pre-commit hook at ...` |
+
+Archetype only owns the region between its markers, so an existing hook is preserved:
+
+```sh
+# >>> archetype pre-commit hook >>>
+...
+# <<< archetype pre-commit hook <<<
+```
+
+Because the block is appended, an existing hook that exits before reaching it will prevent the Archetype check from running. If your hook ends with an explicit `exit`, move the Archetype block above it.
+
+To uninstall, delete that block from `.git/hooks/pre-commit` (or delete the file if Archetype is its only content). Running the command outside a Git repository exits with status `1`:
+
+```
+Error: Unable to resolve git hooks path: fatal: not a git repository (or any of the parent directories): .git
+```
+
 ## Pytest
 
 Archetype ships a pytest plugin. With the package installed, pytest can collect rules from `architecture.py` and report them as test items.
@@ -453,6 +701,7 @@ Each rule includes:
 - `status`
 - `group`
 - `since_date`
+- `escalate_date`
 - `policy`
 - `violations`
 - `diagnostics`
@@ -464,6 +713,8 @@ Each violation includes:
 - `line`
 - `target`
 - `message`
+- `owners`: CODEOWNERS entries matching the violation's file, if a
+  [CODEOWNERS file](#codeowners-integration) is present (empty otherwise)
 
 Example:
 
@@ -488,6 +739,7 @@ Example:
       "status": "failed",
       "group": "Layer boundaries",
       "since_date": null,
+      "escalate_date": null,
       "policy": "error",
       "violations": [
         {
@@ -495,7 +747,8 @@ Example:
           "file": "myapp/api/users.py",
           "line": 7,
           "target": "myapp.db.internal.session",
-          "message": "Module 'myapp.api.users' must not import 'myapp.db' (found import to 'myapp.db.internal.session')."
+          "message": "Module 'myapp.api.users' must not import 'myapp.db' (found import to 'myapp.db.internal.session').",
+          "owners": ["@acme/api-team"]
         }
       ],
       "diagnostics": []
@@ -517,6 +770,39 @@ archetype check . --format sarif > archetype.sarif
 ```
 
 Each Archetype rule is emitted as a SARIF rule descriptor using the rule name as the stable `ruleId`. Each violation is emitted as a SARIF result with a readable message, severity level, source module, imported target, and file/line location when available.
+
+## CODEOWNERS Integration
+
+A generic "CI failed" tells whoever opened the PR that something broke, not
+who is actually responsible for the module involved. If a
+[`CODEOWNERS`](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+file exists, Archetype reads it automatically — no separate ownership file
+to maintain — and routes each violation to the team or user who owns the
+affected path:
+
+```text
+General
+=======
+  ✗ api-must-not-import-db
+    - myapp/api/users.py:7
+        imports myapp.db.internal.session
+        owner: @acme/data-team
+```
+
+The owner also appears in JSON (`owners`), SARIF (`properties.owners`), and
+GitHub Actions inline annotations (prefixed to the message, e.g.
+`@acme/data-team: api-must-not-import-db: ...`).
+
+Archetype checks the same locations and precedence GitHub itself uses:
+
+1. `.github/CODEOWNERS`
+2. `CODEOWNERS` (repository root)
+3. `docs/CODEOWNERS`
+
+Matching follows CODEOWNERS' own last-match-wins rule, same as
+`.gitignore`: later patterns in the file override earlier ones for the
+same path. No configuration is required — if none of the three files
+exist, violations are reported exactly as before.
 
 ## Import Graph Export
 
@@ -606,9 +892,23 @@ Imports are missing from the graph
 
 Check that modules live under detected package roots. `archetype doctor .` shows the roots Archetype is using.
 
+## Security
+
+Archetype makes no network calls and sends no telemetry. It only reads
+source files from disk and writes reports to stdout or the file/path you
+specify.
+
+`architecture.py` is loaded and executed as ordinary Python, not parsed as
+inert data — rules can do anything Python can do, with the same privileges
+as the process running `archetype check`. Do not run `archetype check`
+against untrusted, unreviewed changes (for example, code from a fork PR)
+in a CI job that has write permissions or access to secrets. See
+[`SECURITY.md`](./SECURITY.md) for the full security model and how to
+report a vulnerability.
+
 ## Roadmap
 
-See [`ROADMAP.md`](./ROADMAP.md) for planned work.
+Planned work is tracked in [GitHub Issues](https://github.com/MossabArektout/archetype-py/issues) and milestones.
 
 ## Contributing
 

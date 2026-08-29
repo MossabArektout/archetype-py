@@ -11,6 +11,7 @@ from urllib.parse import quote
 from rich.console import Console
 
 from archetype.baseline import ViolationCounts
+from archetype.analysis.codeowners import Codeowners
 from archetype.analysis.models import RuleResult, Violation
 
 JSON_SCHEMA_VERSION = 2
@@ -43,34 +44,72 @@ def format_violation(violation: Violation) -> str:
     return f"{violation.module} -> {target}: {violation.message}"
 
 
-def _violation_location(violation: Violation) -> str | None:
-    if violation.line <= 0 or str(violation.file) in {"", "<unknown>"}:
+def _relative_violation_path(
+    violation: Violation,
+    *,
+    project_root: Path | None = None,
+) -> Path | None:
+    file_value = str(violation.file)
+    if file_value in {"", "<unknown>"}:
         return None
 
-    raw_file = Path(violation.file)
+    raw_file = Path(file_value)
     file_path = raw_file.resolve() if raw_file.is_absolute() else raw_file
     display_path = file_path
 
-    try:
-        import archetype.dsl.query as query_module
+    resolved_root = project_root
+    if resolved_root is None:
+        try:
+            import archetype.dsl.query as query_module
 
-        project_root = (
-            getattr(query_module, "_project_root", None)
-            or getattr(query_module, "_current_root", None)
-        )
-        if project_root is not None:
-            display_path = file_path.relative_to(Path(project_root).resolve())
+            resolved_root = (
+                getattr(query_module, "_project_root", None)
+                or getattr(query_module, "_current_root", None)
+            )
+        except Exception:  # noqa: BLE001
+            resolved_root = None
+
+    try:
+        if resolved_root is not None:
+            display_path = file_path.relative_to(Path(resolved_root).resolve())
         elif file_path.is_absolute():
             display_path = file_path.relative_to(Path.cwd().resolve())
     except Exception:  # noqa: BLE001
         display_path = raw_file
 
+    return display_path
+
+
+def _violation_location(violation: Violation) -> str | None:
+    if violation.line <= 0 or str(violation.file) in {"", "<unknown>"}:
+        return None
+
+    display_path = _relative_violation_path(violation)
+    if display_path is None:
+        return None
+
     return f"{display_path.as_posix()}:{violation.line}"
+
+
+def _violation_owners(
+    violation: Violation,
+    codeowners: Codeowners | None,
+    *,
+    project_root: Path | None = None,
+) -> tuple[str, ...]:
+    if codeowners is None or codeowners.is_empty:
+        return ()
+    relative_path = _relative_violation_path(violation, project_root=project_root)
+    if relative_path is None:
+        return ()
+    return codeowners.owners_for(relative_path.as_posix())
 
 
 def _format_rule_name(result: RuleResult) -> str:
     if result.since_date:
         return f"{result.name} (since {result.since_date})"
+    if result.escalate_date:
+        return f"{result.name} (warn until {result.escalate_date})"
     return result.name
 
 
@@ -109,7 +148,10 @@ def _format_timeout_seconds(timeout_seconds: float | None) -> str:
     return f"{numeric:g}s"
 
 
-def _violation_lines(result: RuleResult) -> list[str]:
+def _violation_lines(
+    result: RuleResult,
+    codeowners: Codeowners | None = None,
+) -> list[str]:
     lines: list[str] = []
     for context_line in result.violation_context:
         lines.append(f"    {context_line}")
@@ -120,6 +162,9 @@ def _violation_lines(result: RuleResult) -> list[str]:
             lines.append(f"        imports {_extract_target(violation)}")
         else:
             lines.append(f"    - {format_violation(violation)}")
+        owners = _violation_owners(violation, codeowners)
+        if owners:
+            lines.append(f"        owner: {', '.join(owners)}")
     return lines
 
 
@@ -140,7 +185,12 @@ def _filtered_group_results(
     return [result for result in group_results if _should_render_result(result, quiet=True)]
 
 
-def format_results(results: list[RuleResult], quiet: bool = False) -> str:
+def format_results(
+    results: list[RuleResult],
+    quiet: bool = False,
+    *,
+    codeowners: Codeowners | None = None,
+) -> str:
     """Build a complete plain-text report for rule execution results."""
     lines: list[str] = []
     skipped = sum(1 for result in results if result.skipped)
@@ -181,11 +231,11 @@ def format_results(results: list[RuleResult], quiet: bool = False) -> str:
                 symbol = "✓" if result.passed else "✗"
             lines.append(f"  {symbol} {_format_rule_name(result)}")
             if result.warned:
-                lines.extend(_violation_lines(result))
+                lines.extend(_violation_lines(result, codeowners))
                 if result.error is not None:
                     lines.append(f"    - Rule error: {result.error}")
             elif not result.passed:
-                lines.extend(_violation_lines(result))
+                lines.extend(_violation_lines(result, codeowners))
                 if result.error is not None:
                     lines.append(f"    - Rule error: {result.error}")
 
@@ -241,6 +291,7 @@ def format_results_json(
     *,
     violation_counts: ViolationCounts | None = None,
     scope: Mapping[str, object] | None = None,
+    codeowners: Codeowners | None = None,
 ) -> Mapping[str, object]:
     """Build a JSON-serializable report for rule execution results."""
     skipped = sum(1 for result in results if result.skipped)
@@ -270,16 +321,18 @@ def format_results_json(
                 "status": _result_status(result),
                 "group": result.group,
                 "since_date": result.since_date,
+                "escalate_date": result.escalate_date,
                 "policy": result.policy,
                 "violations": [
                     {
                         "module": violation.module,
                         "file": None
                         if str(violation.file) in {"", "<unknown>"}
-                        else str(violation.file),
+                        else Path(violation.file).as_posix(),
                         "line": violation.line,
                         "target": _extract_target(violation),
                         "message": violation.message,
+                        "owners": list(_violation_owners(violation, codeowners)),
                     }
                     for violation in result.violations
                 ],
@@ -311,6 +364,8 @@ def _sarif_rule_properties(result: RuleResult) -> dict[str, object]:
         properties["group"] = result.group
     if result.since_date is not None:
         properties["since_date"] = result.since_date
+    if result.escalate_date is not None:
+        properties["escalate_date"] = result.escalate_date
     return properties
 
 
@@ -375,6 +430,9 @@ def _sarif_location(
 def _sarif_result_properties(
     result: RuleResult,
     violation: Violation,
+    *,
+    codeowners: Codeowners | None = None,
+    project_root: Path | None = None,
 ) -> dict[str, object]:
     properties: dict[str, object] = {
         "module": violation.module,
@@ -382,6 +440,9 @@ def _sarif_result_properties(
     }
     if result.group is not None:
         properties["group"] = result.group
+    owners = _violation_owners(violation, codeowners, project_root=project_root)
+    if owners:
+        properties["owners"] = list(owners)
     return properties
 
 
@@ -390,6 +451,7 @@ def format_results_sarif(
     *,
     project_root: Path,
     scope: Mapping[str, object] | None = None,
+    codeowners: Codeowners | None = None,
 ) -> Mapping[str, object]:
     """Build a SARIF 2.1.0 report for rule execution results."""
     rule_index_by_id: dict[str, int] = {}
@@ -413,7 +475,12 @@ def format_results_sarif(
                 "level": _sarif_level(result),
                 "kind": "fail",
                 "message": {"text": f"{result.name}: {violation.message}"},
-                "properties": _sarif_result_properties(result, violation),
+                "properties": _sarif_result_properties(
+                    result,
+                    violation,
+                    codeowners=codeowners,
+                    project_root=project_root,
+                ),
             }
             location = _sarif_location(violation, project_root=project_root)
             if location is not None:
@@ -453,6 +520,7 @@ def format_github_annotations(
     results: list[RuleResult],
     *,
     project_root: Path,
+    codeowners: Codeowners | None = None,
 ) -> list[str]:
     """Build GitHub Actions workflow annotation commands for rule violations."""
     annotations: list[str] = []
@@ -482,8 +550,10 @@ def format_github_annotations(
                     file_path = file_path.resolve()
             line = violation.line if violation.line > 0 else 1
             file_prop = _github_escape_property(file_path.as_posix())
+            owners = _violation_owners(violation, codeowners, project_root=project_root)
+            owner_prefix = f"{', '.join(owners)}: " if owners else ""
             message = _github_escape_data(
-                f"{result.name}: {violation.message}"
+                f"{owner_prefix}{result.name}: {violation.message}"
             )
             annotations.append(
                 f"::{level} file={file_prop},line={line},title={title}::{message}"
@@ -492,7 +562,12 @@ def format_github_annotations(
     return annotations
 
 
-def print_results(results: list[RuleResult], quiet: bool = False) -> None:
+def print_results(
+    results: list[RuleResult],
+    quiet: bool = False,
+    *,
+    codeowners: Codeowners | None = None,
+) -> None:
     """Print rule results using rich colors for pass/fail states."""
     console = Console()
     skipped = sum(1 for result in results if result.skipped)
@@ -544,6 +619,9 @@ def print_results(results: list[RuleResult], quiet: bool = False) -> None:
                             )
                         else:
                             console.print(f"[yellow]    - {format_violation(violation)}[/yellow]")
+                        owners = _violation_owners(violation, codeowners)
+                        if owners:
+                            console.print(f"[yellow]        owner: {', '.join(owners)}[/yellow]")
                     if result.error is not None:
                         console.print(f"[yellow]    - Rule error: {result.error}[/yellow]")
                 continue
@@ -562,6 +640,9 @@ def print_results(results: list[RuleResult], quiet: bool = False) -> None:
                     console.print(f"[red]        imports {_extract_target(violation)}[/red]")
                 else:
                     console.print(f"[red]    - {format_violation(violation)}[/red]")
+                owners = _violation_owners(violation, codeowners)
+                if owners:
+                    console.print(f"[red]        owner: {', '.join(owners)}[/red]")
             if result.error is not None:
                 console.print(f"[red]    - Rule error: {result.error}[/red]")
 

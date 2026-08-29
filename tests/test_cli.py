@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -117,6 +118,34 @@ def test_cli_exits_one_when_any_rule_fails(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Summary: 0 passed, 1 failed, 0 warned, 0 skipped, 1 total rules." in result.output
+
+
+def test_cli_routes_violation_to_codeowners_owner(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    github_dir = project_path / ".github"
+    github_dir.mkdir()
+    (github_dir / "CODEOWNERS").write_text(
+        "simple_project/api.py @acme/api-team\n", encoding="utf-8"
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["check", str(project_path)])
+
+    assert result.exit_code == 1
+    assert "@acme/api-team" in result.output
 
 
 def test_cli_prints_violation_messages_for_failing_rules(tmp_path: Path) -> None:
@@ -270,6 +299,53 @@ def test_graph_command_exports_json_import_graph(tmp_path: Path) -> None:
         and edge["line"] > 0
         for edge in payload["edges"]
     )
+
+
+def test_check_record_trend_and_trend_command_round_trip(tmp_path: Path) -> None:
+    project_path = _make_project_copy(tmp_path)
+    (project_path / "architecture.py").write_text(
+        "\n".join(
+            [
+                "from archetype import imports, rule",
+                "",
+                "@rule('api-must-not-import-db')",
+                "def _rule_api_not_db() -> None:",
+                "    imports('simple_project.api').must_not_import('simple_project.db')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    trend_path = tmp_path / "trend.jsonl"
+    runner = CliRunner()
+
+    check_result = runner.invoke(
+        cli, ["check", str(project_path), "--record-trend", str(trend_path)]
+    )
+    assert check_result.exit_code == 1
+    assert trend_path.is_file()
+
+    # A second run appends rather than overwriting.
+    runner.invoke(cli, ["check", str(project_path), "--record-trend", str(trend_path)])
+
+    trend_result = runner.invoke(cli, ["trend", str(trend_path)])
+    assert trend_result.exit_code == 0
+    assert "Trend (2 runs):" in trend_result.output
+
+    trend_json_result = runner.invoke(cli, ["trend", str(trend_path), "--format", "json"])
+    assert trend_json_result.exit_code == 0
+    entries = json.loads(trend_json_result.output)
+    assert len(entries) == 2
+    assert entries[0]["violations"]["total"] == 1
+    assert entries[0]["summary"]["failed"] == 1
+
+
+def test_trend_command_errors_on_missing_file(tmp_path: Path) -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["trend", str(tmp_path / "missing.jsonl")])
+
+    assert result.exit_code != 0
 
 
 def test_cli_exits_zero_when_only_warned_rules_have_violations(tmp_path: Path) -> None:
@@ -1626,7 +1702,12 @@ def test_cli_install_hook_creates_pre_commit_hook(
     assert content.startswith("#!/bin/sh")
     assert "# >>> archetype pre-commit hook >>>" in content
     assert 'archetype check "$repo_root"' in content
-    assert hook_path.stat().st_mode & 0o111
+    if sys.platform != "win32":
+        # os.chmod's execute bits are a POSIX-only concept; NTFS has no
+        # equivalent, so Python's chmod on native Windows is a no-op here.
+        # The hook itself is only ever run through sh (Linux/macOS/WSL/Git
+        # Bash), where this bit is what actually matters.
+        assert hook_path.stat().st_mode & 0o111
 
 
 def test_cli_install_hook_is_idempotent(
