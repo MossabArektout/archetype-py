@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-08-29
+
 ### Documentation
 - Filled in `BENCHMARKS.md` with real measurements from
   `benchmarks/run_benchmarks.py` (previously a stub table of dashes),

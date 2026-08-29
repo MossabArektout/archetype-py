@@ -722,7 +722,7 @@ Archetype ships a [`.pre-commit-hooks.yaml`](./.pre-commit-hooks.yaml) manifest,
 ```yaml
 repos:
   - repo: https://github.com/MossabArektout/archetype-py
-    rev: v0.4.0 # use the latest tag
+    rev: v0.5.0 # use the latest tag
     hooks:
       - id: archetype
 ```
