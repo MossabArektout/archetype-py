@@ -30,7 +30,11 @@ from archetype.analysis.cache import (
     is_cache_valid,
     load_cached_graph,
 )
-from archetype.analysis.imports import build_import_graph, discover_package_roots
+from archetype.analysis.imports import (
+    SourceReadError,
+    build_import_graph,
+    discover_package_roots,
+)
 from archetype.analysis.path_filters import filter_excluded_paths
 from archetype.config import load_check_config
 from archetype.dsl.query import load_project
@@ -346,12 +350,16 @@ def check(
         effective_excludes = list(exclude_patterns)
 
     use_cache = True if effective_cache is None else effective_cache
-    load_project(
-        project_path,
-        src_root=src_root,
-        no_cache=not use_cache,
-        exclude_patterns=effective_excludes,
-    )
+    try:
+        load_project(
+            project_path,
+            src_root=src_root,
+            no_cache=not use_cache,
+            exclude_patterns=effective_excludes,
+        )
+    except SourceReadError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
 
     module_name = f"_archetype_user_architecture_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(module_name, architecture_file)
@@ -553,7 +561,11 @@ def doctor(path: Path) -> None:
         analysis_root,
         exclude_patterns=effective_excludes,
     )
-    graph = build_import_graph(analysis_root, exclude_patterns=effective_excludes)
+    try:
+        graph = build_import_graph(analysis_root, exclude_patterns=effective_excludes)
+    except SourceReadError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
     current_signatures = compute_file_signatures(
         project_path,
         exclude_patterns=effective_excludes,
@@ -676,10 +688,14 @@ def graph(path: Path, output_format: str, exclude_patterns: tuple[str, ...]) -> 
         raise SystemExit(1) from exc
 
     effective_excludes = list(exclude_patterns) or list(config.exclude_patterns or [])
-    import_graph = build_import_graph(
-        _analysis_root(project_path),
-        exclude_patterns=effective_excludes,
-    )
+    try:
+        import_graph = build_import_graph(
+            _analysis_root(project_path),
+            exclude_patterns=effective_excludes,
+        )
+    except SourceReadError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
 
     if output_format == "json":
         click.echo(json.dumps(_format_graph_json(import_graph), ensure_ascii=False, indent=2))
