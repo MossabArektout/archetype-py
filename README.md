@@ -640,7 +640,56 @@ archetype check . --changed-from origin/main
 
 ## GitHub Actions
 
-Basic CI:
+The simplest way to run Archetype in GitHub Actions is the composite
+action published from this repository — one line instead of a full job
+definition, checkout and Python setup included.
+
+> **Note:** this requires a version tag (`v1`, matching GitHub's Marketplace
+> convention for Actions) to exist on this repository. Until that tag is
+> cut, pin to a commit SHA or `@main` instead of `@v1`.
+
+```yaml
+name: Architecture
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  archetype:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: MossabArektout/archetype-py@v1
+```
+
+Inputs (all optional):
+
+| Input | Default | Purpose |
+|---|---|---|
+| `path` | `.` | Path to the project to check. |
+| `python-version` | `3.11` | Python version to run Archetype with. |
+| `version` | latest | Pin a specific `archetype-py` version. |
+| `args` | *(none)* | Extra arguments appended to `archetype check`, e.g. `--format json`. |
+| `github-annotations` | `true` | Emit inline PR annotations when supported. |
+| `checkout` | `true` | Set to `false` if your job already has its own `actions/checkout` step. |
+| `fetch-depth` | `0` | Git history depth; keep full history if you use `--changed-from` or `@since`. |
+
+```yaml
+- uses: MossabArektout/archetype-py@v1
+  with:
+    path: backend/
+    args: --format json
+```
+
+The action is versioned like any other dependency: pin `@v1` for the
+current major version, or a specific tag/SHA for full reproducibility.
+Its definition lives in [`action.yml`](./action.yml) at the root of this
+repository, so `main` is always the newest unreleased behavior and tagged
+releases (`v1`, `v1.2.0`, etc.) are what's safe to depend on in CI.
+
+<details>
+<summary>Or, define the job by hand (equivalent, more control)</summary>
 
 ```yaml
 name: Architecture
@@ -667,6 +716,8 @@ Inline PR annotations:
 ```yaml
 - run: archetype check . --github-annotations
 ```
+
+</details>
 
 ## GitLab CI
 

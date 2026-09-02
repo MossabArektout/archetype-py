@@ -94,6 +94,12 @@
   series data). No new analysis — reuses the count already computed for
   the JSON report contract.
 
+### Added
+- Added a composite GitHub Action (`action.yml`) so CI setup is one line
+  (`uses: MossabArektout/archetype-py@v1`) instead of a hand-copied
+  checkout/setup-python/install/run block. Requires cutting a `v1` tag
+  before that reference works; until then use `@main` or a pinned SHA.
+
 ### Documentation
 - Added GitLab CI and Azure Pipelines examples alongside the existing
   GitHub Actions one, so teams on those platforms don't have to translate
