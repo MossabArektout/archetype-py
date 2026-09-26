@@ -757,6 +757,8 @@ def _echo_inference_summary(inference: Inference) -> None:
     rows.append(
         ("Layers", " → ".join(short(inference.layers)) if inference.layers else "none found")
     )
+    if inference.layers_leaky and len(inference.layers) > 1:
+        rows.append(("Enforced", " → ".join(short(inference.layers[1:]))))
     rows.append(
         (
             "Independent",

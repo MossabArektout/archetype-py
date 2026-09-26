@@ -203,6 +203,18 @@ def test_rare_upward_import_is_flagged_as_a_leak(tmp_path: Path) -> None:
     assert "db -> api at myapp/db/models.py:1" in inferred.content
 
 
+def test_cli_init_infer_shows_enforced_layers_after_a_leak(tmp_path: Path) -> None:
+    project = _project(tmp_path, LEAKY_APP)
+
+    result = CliRunner().invoke(cli, ["init", str(project), "--infer"])
+
+    assert result.exit_code == 0
+    assert "Layers" in result.output
+    assert "api → services → repositories → db" in result.output
+    assert "Enforced" in result.output
+    assert "services → repositories → db" in result.output
+
+
 def test_leak_between_non_chain_packages_gets_its_own_warning(tmp_path: Path) -> None:
     inferred = _infer(
         _project(
