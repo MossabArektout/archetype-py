@@ -13,6 +13,7 @@ from archetype.reporter import (
     SARIF_SCHEMA_URI,
     SARIF_VERSION,
     format_github_annotations,
+    format_violation,
     format_results,
     format_results_json,
     format_results_sarif,
@@ -473,3 +474,14 @@ def test_format_github_annotations_escapes_reserved_characters() -> None:
 
     assert "title=archetype%3A rule%3Acore%2Cimports" in annotations[0]
     assert "::rule:core,imports: invalid: one,two%25three%0Anext line" in annotations[0]
+
+
+def test_format_violation_names_the_imported_module_for_cycle_chains() -> None:
+    violation = Violation(
+        module="myapp.a",
+        file=Path("myapp/a.py"),
+        line=3,
+        message="myapp.a imports myapp.b imports myapp.a",
+    )
+
+    assert "imports myapp.b" in format_violation(violation)

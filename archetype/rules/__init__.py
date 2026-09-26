@@ -6,6 +6,7 @@ from archetype.rules.naming import classes_in, functions_in
 from archetype.rules.cycles import no_cycles
 from archetype.rules.public_api import public_api
 from archetype.rules.deprecated import deprecated
+from archetype.rules.independence import independent
 
 __all__ = [
     "layers",
@@ -15,4 +16,5 @@ __all__ = [
     "no_cycles",
     "public_api",
     "deprecated",
+    "independent",
 ]

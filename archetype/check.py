@@ -36,6 +36,7 @@ from archetype.analysis.imports import build_import_graph, discover_package_root
 from archetype.analysis.path_filters import filter_excluded_paths
 from archetype.config import load_check_config
 from archetype.dsl.query import load_project
+from archetype.infer import Inference, build_inferred_architecture, summarize_names
 from archetype.init import (
     detect_project_structure,
     find_existing_architecture_py,
@@ -731,6 +732,75 @@ def trend(path: Path, output_format: str) -> None:
     raise SystemExit(0)
 
 
+def _short_module(module_name: str, scope: str) -> str:
+    if scope and module_name.startswith(f"{scope}."):
+        return module_name[len(scope) + 1 :]
+    return module_name
+
+
+def _echo_inference_summary(inference: Inference) -> None:
+    scope = inference.scope
+
+    def short(names: list[str]) -> list[str]:
+        return [_short_module(name, scope) for name in names]
+
+    subject = scope or "project"
+    module_noun = "module" if inference.module_count == 1 else "modules"
+    import_noun = "import" if inference.import_count == 1 else "imports"
+    click.echo(
+        f"\nAnalyzed {subject}: {inference.module_count} {module_noun}, "
+        f"{inference.import_count} internal {import_noun}, "
+        f"{len(inference.components)} top-level components.\n"
+    )
+
+    rows: list[tuple[str, str]] = []
+    rows.append(
+        ("Layers", " → ".join(short(inference.layers)) if inference.layers else "none found")
+    )
+    rows.append(
+        (
+            "Independent",
+            ", ".join(short(inference.independent)) if inference.independent else "none found",
+        )
+    )
+    if inference.protected:
+        protected = [
+            _short_module(name, scope) + (" (already leaking)" if leaking else "")
+            for name, _parent, leaking in inference.protected
+        ]
+        rows.append(("Protected", ", ".join(protected)))
+    if inference.cycles:
+        places = "1 place" if len(inference.cycles) == 1 else f"{len(inference.cycles)} places"
+        rows.append(("Cycles", f"found in {places} (added as a warning)"))
+    else:
+        rows.append(("Cycles", "none ✓"))
+    if inference.tangled:
+        rows.append(
+            (
+                "Tangled",
+                "; ".join(summarize_names(short(members), " ↔ ") for members in inference.tangled),
+            )
+        )
+    if inference.leaks:
+        leaks = [
+            f"{_short_module(leak.source, scope)} → {_short_module(leak.target, scope)}"
+            f" ({leak.count}×)"
+            for leak in inference.leaks
+        ]
+        rows.append(("Likely leaks", ", ".join(leaks)))
+
+    width = max(len(label) for label, _ in rows)
+    for label, value in rows:
+        click.echo(f"  {label.ljust(width)}  {value}")
+    if inference.facade_importers:
+        count = len(inference.facade_importers)
+        noun = "module imports" if count == 1 else "modules import"
+        click.echo(
+            f"\n  Note: {count} {noun} the {scope} package itself, which hides what they "
+            "use from import rules."
+        )
+
+
 @cli.command("init")
 @click.argument(
     "path",
@@ -738,7 +808,22 @@ def trend(path: Path, output_format: str) -> None:
     default=".",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
-def init(path: Path) -> None:
+@click.option(
+    "--infer",
+    is_flag=True,
+    default=False,
+    help=(
+        "Analyze the current import graph and generate rules that already pass: "
+        "layers, independent packages, protected internals, and cycle checks."
+    ),
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print the generated architecture.py to stdout instead of writing it.",
+)
+def init(path: Path, infer: bool, dry_run: bool) -> None:
     """Detect project structure and generate a starter architecture.py file."""
     project_path = path.resolve()
     display_path = str(path)
@@ -747,6 +832,55 @@ def init(path: Path) -> None:
         if display_path in {".", ""}
         else f"{display_path.rstrip('/')}/architecture.py"
     )
+
+    if infer:
+        try:
+            inferred = build_inferred_architecture(project_path)
+        except ValueError as exc:
+            click.echo(f"Error: {exc}", err=True)
+            raise SystemExit(1) from exc
+        inference = inferred.inference
+        if not inference.module_count:
+            click.echo(
+                "Error: no Python modules found to analyze. Run this from the project "
+                "root, or pass the path to it.",
+                err=True,
+            )
+            raise SystemExit(1)
+        if dry_run:
+            click.echo(inferred.content, nl=False)
+            raise SystemExit(0)
+
+        existing_file = find_existing_architecture_py(project_path)
+        if existing_file is not None:
+            click.echo(f"architecture.py already exists at {display_arch_path}")
+            if not click.confirm("Overwrite?", default=False):
+                click.echo("\nExisting file kept unchanged.")
+                click.echo(f"Tip: preview the inferred rules with archetype init {path} --infer --dry-run")
+                raise SystemExit(0)
+            existing_file.unlink()
+
+        _echo_inference_summary(inference)
+        write_architecture_py(project_path, inferred.content)
+
+        rule_count = len(inferred.results)
+        warned = [result for result in inferred.results if result.warned]
+        rule_noun = "rule" if rule_count == 1 else "rules"
+        if warned:
+            warn_noun = "warning" if len(warned) == 1 else "warnings"
+            status = (
+                f"no failures today, {len(warned)} {warn_noun} pointing at "
+                "problems that already exist"
+            )
+        else:
+            status = "all passing today"
+        click.echo(f"\nWrote {display_arch_path}: {rule_count} {rule_noun}, {status}.")
+        click.echo(f"Run archetype check {path} to see them.")
+        raise SystemExit(0)
+
+    if dry_run:
+        click.echo(generate_architecture_py(detect_project_structure(project_path)), nl=False)
+        raise SystemExit(0)
 
     existing_file = find_existing_architecture_py(project_path)
     if existing_file is not None:
@@ -794,6 +928,10 @@ def init(path: Path) -> None:
 
     click.echo(f"architecture.py created at {display_arch_path}")
     click.echo(f"Run archetype check {path} to see results.")
+    click.echo(
+        f"Tip: archetype init {path} --infer generates rules from your existing "
+        "import graph instead."
+    )
     raise SystemExit(0)
 
 
