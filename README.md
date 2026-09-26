@@ -18,17 +18,19 @@ Install the package:
 pip install archetype-py
 ```
 
-Generate a starter architecture file:
+Generate rules from the structure your code already has:
 
 ```bash
-archetype init .
+archetype init . --infer
 ```
 
-Edit `architecture.py`, then run:
+Then run them:
 
 ```bash
 archetype check .
 ```
+
+The inferred rules pass on today's code, so the first run is green and every later run catches new drift. See [Inferring Rules From Your Code](#inferring-rules-from-your-code). If you would rather write every rule yourself, `archetype init .` generates a small starter file instead.
 
 For CI, add the same command:
 
@@ -37,6 +39,61 @@ For CI, add the same command:
 ```
 
 Requires Python 3.11+.
+
+## Inferring Rules From Your Code
+
+`archetype init --infer` reads your import graph and writes an `architecture.py` describing the architecture you already have:
+
+```text
+$ archetype init . --infer
+
+Analyzed shop: 25 modules, 22 internal imports, 8 top-level components.
+
+  Layers        api → services → repositories → db → core
+  Independent   billing, orders, shipping
+  Protected     core.internal (already leaking)
+  Cycles        found in 2 places (added as a warning)
+  Likely leaks  db → api (1×)
+
+Wrote ./architecture.py: 5 rules, no failures today, 3 warnings pointing at problems that already exist.
+Run archetype check . to see them.
+```
+
+It looks at the top-level packages inside your project (`shop.api`, `shop.billing`, ...) and how they import each other, then proposes:
+
+| Rule | Inferred from |
+|---|---|
+| `layers([...]).are_ordered()` | The longest chain of packages where each imports the next and nothing imports back up. |
+| `independent([...])` | Packages that use other packages but never reach each other, directly or indirectly. Typically feature packages like `billing` / `orders` / `shipping`. |
+| `module(...).only_imported_within(...)` | `internal` and `_private` subpackages that are only imported from inside their parent. |
+| `no_cycles(...)` | Always added. It becomes a `@warn` rule when import cycles already exist. |
+| `imports(...).must_not_import(...)` (`@warn`) | Likely leaks: a rare import that runs against the rest of the code and closes a loop, like a single `db → api` import next to many `api → … → db` imports. |
+
+Every generated rule runs through the rule engine before the file is written. Rules that hold today are enforced. Rules that describe a problem that already exists are marked `@warn`, so they are reported but never fail the run. Fix the problem, then delete the `@warn` line. When a likely leak breaks the full layering, you get two layer rules: an enforced one that leaves out the layer the leak reaches into, and a `@warn` one for the full stack.
+
+The generated file is commented with the evidence for each rule (import counts, file and line of each leak, example cycles), so you can review it before committing:
+
+```python
+with group("Independence"):
+    # These packages never import each other today, directly or indirectly.
+    # Keep them decoupled: share code through a lower layer instead.
+    @rule("independent-packages")
+    def independent_packages() -> None:
+        independent(
+            [
+                "shop.billing",
+                "shop.orders",
+                "shop.shipping",
+            ]
+        )
+```
+
+Useful to know:
+
+- `--dry-run` prints the generated file instead of writing it.
+- Tests, docs, examples, benchmarks and scripts are left out of inference. Exclusions from `archetype.toml` apply too.
+- Modules that import the root package itself (`import myapp`) hide what they actually use. Those packages are left out of independence rules, and the summary tells you how many there are.
+- Packages that import each other heavily in both directions cannot be layered. They are listed as *tangled* rather than guessed at.
 
 ## Why Archetype
 
@@ -191,10 +248,12 @@ Warnings do not fail the run — this example exits `0`. See
 
 ## Core Features
 
+- Rule inference from the existing import graph with `archetype init --infer`
 - Forbidden import rules
 - Allowlisted import rules
 - Transitive dependency checks
 - Layer ordering rules, with strict adjacent-layer (no layer-skipping) mode
+- Independent sibling packages with `independent([...])`
 - Import cycle detection
 - Protected internal module boundaries
 - Public API enforcement from a package's declared `__all__`
@@ -270,6 +329,26 @@ from myapp import db        # Violation: skips over services
 ```
 
 `are_adjacent()` is a strict superset of `are_ordered()` — it also catches upward imports — so call one or the other for a given layer list, not both, to avoid the same edge being reported twice.
+
+## Independent Packages
+
+Layers describe *vertical* structure. `independent([...])` describes *horizontal* structure: sibling packages that must not import each other, and share code only through a lower layer.
+
+```python
+from archetype.rules import independent
+
+@rule("features-are-independent")
+def features_are_independent() -> None:
+    independent(["myapp.billing", "myapp.orders", "myapp.shipping"])
+```
+
+```python
+# myapp/orders/cart.py
+from myapp.core import money       # OK: a shared lower layer
+from myapp.billing import invoices  # Violation: orders imports billing
+```
+
+Imports within a single package are allowed. Every cross-package import is reported, not just the first one.
 
 ## Import Depth and Coupling Limits
 
@@ -352,6 +431,8 @@ Use `archetype doctor .` to inspect what Archetype detected.
 | Command | Purpose |
 |---|---|
 | `archetype init [path]` | Generate a starter `architecture.py`. |
+| `archetype init [path] --infer` | Generate rules that already pass from the current import graph. See [Inferring Rules From Your Code](#inferring-rules-from-your-code). |
+| `archetype init [path] --dry-run` | Print the generated `architecture.py` instead of writing it. |
 | `archetype check [path]` | Load `architecture.py` and run all registered rules. |
 | `archetype check [path] --group <name>` | Run only rules in one group. |
 | `archetype check [path] --format json` | Emit machine-readable JSON report output. |

@@ -31,11 +31,13 @@ pip install archetype-py
 ## Quick Start
 
 ```bash
-archetype init .
+archetype init . --infer
 archetype check .
 ```
 
-Create an `architecture.py` file and define your rules:
+`init --infer` reads your import graph and writes rules that already pass: layers, independent packages, protected internals, and cycle checks. Existing problems are added as warnings, so the first run is green and later runs catch new drift.
+
+Or write rules yourself in `architecture.py`:
 
 ```python
 from archetype import rule
@@ -51,13 +53,14 @@ def layer_order() -> None:
 - Architecture rules for forbidden imports, allowlisted imports, and protected boundaries
 - Transitive dependency checks with `must_not_depend_on`
 - Layer order enforcement with `layers(...).are_ordered()`, and strict no-skipping mode with `.are_adjacent()`
+- Sibling package independence with `independent([...])`
 - Import cycle detection with `no_cycles(...)`
 - Public API enforcement from a package's declared `__all__` with `public_api(...).enforce()`
 - Import depth limits and fan-in/fan-out coupling thresholds with `imports(...).max_depth(n)`, `.fan_in_at_most(n)`, `.fan_out_at_most(n)`
 - Deprecated-module sunset warnings with `deprecated(pattern, sunset=..., reason=...)`
 - Rule decorators: `@rule`, `@warn`, `@skip`, `@since`
 - Rule grouping via `group("...")` and targeted execution with `--group`
-- `archetype init` scaffolding for starter `architecture.py`
+- `archetype init --infer` generates passing rules from the existing import graph; `archetype init` scaffolds a starter file
 - JSON and text reporting (`--format json|text`) with stable JSON contract versioning
 - Quiet output mode (`--quiet`) for CI-friendly logs
 - Import graph caching for faster repeated runs (`--cache`, `--no-cache`)

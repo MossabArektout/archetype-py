@@ -32,6 +32,10 @@ def _extract_target(violation: Violation) -> str:
     quoted = re.findall(r"'([^']+)'", violation.message)
     if quoted:
         return quoted[-1]
+    # Cycle chains ("a imports b imports a") point at the a -> b edge.
+    match = re.match(r"[\w.]+ imports ([\w.]+)", violation.message)
+    if match:
+        return match.group(1)
     return "<unknown>"
 
 

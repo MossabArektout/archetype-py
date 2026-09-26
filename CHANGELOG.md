@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Added
+- `archetype init --infer` generates an `architecture.py` from the project's
+  current import graph. It rolls module imports up to top-level packages
+  and infers:
+  - a `layers()` rule from the longest downward dependency chain,
+  - an `independent()` rule for packages that never reach each other,
+  - `module().only_imported_within()` rules for `internal` / `_private`
+    packages only used by their parent,
+  - `no_cycles()`, as a warning when cycles already exist,
+  - warning rules for likely leaks: rare imports that close a loop
+    between packages, found by cutting the lightest import edges on each
+    loop.
+
+  Every generated rule is executed before the file is written. Rules that
+  fail on today's code are marked `@warn`, so the first `archetype check`
+  never fails. The file is commented with the evidence for each rule
+  (import counts, leak locations, example cycles). Test, docs, example,
+  benchmark, and script code is left out of inference.
+- `archetype init --dry-run` prints the generated file instead of writing it
+  (with or without `--infer`).
+- `independent([...])` rule helper: sibling packages must not import each
+  other. Every cross-package import is reported.
+
+### Fixed
+- `no_cycles()` could hang on heavily tangled import graphs, because it
+  enumerated every elementary cycle (a 100-module package such as `rich`
+  has millions). Enumeration now stops after 1000 cycles and says so.
+  Graphs with fewer cycles report exactly the same violations as before, so
+  existing baselines are unaffected.
+- Import-cycle violations now name the imported module in text output
+  (`imports myapp.b`) instead of `imports <unknown>`.
+
 ## 0.5.0 - 2026-08-29
 
 ### Documentation

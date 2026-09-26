@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from itertools import islice
+
 import networkx as nx
 
 import archetype.dsl.query as query_module
 from archetype.analysis.models import Violation
 from archetype.analysis.pattern import find_matching_nodes
+
+# The number of distinct cycles grows exponentially in a tangled graph (a
+# 100-module package can have millions), so enumeration stops here instead of
+# hanging. Projects below the cap get exactly the full list, as before.
+MAX_REPORTED_CYCLES = 1000
 
 
 def _normalize_cycle(cycle: list[str]) -> tuple[str, ...]:
@@ -50,7 +57,9 @@ def no_cycles(module_pattern: str | None = None) -> None:
             )
         target_graph = graph.subgraph(matched_nodes).copy()
 
-    raw_cycles = list(nx.simple_cycles(target_graph))
+    raw_cycles = list(islice(nx.simple_cycles(target_graph), MAX_REPORTED_CYCLES + 1))
+    truncated = len(raw_cycles) > MAX_REPORTED_CYCLES
+    raw_cycles = raw_cycles[:MAX_REPORTED_CYCLES]
     if not raw_cycles:
         return
 
@@ -79,6 +88,21 @@ def no_cycles(module_pattern: str | None = None) -> None:
             )
         )
 
-    exc = AssertionError(f"Detected {len(violations)} circular import cycle(s).")
+    if truncated:
+        exc = AssertionError(
+            f"Detected more than {MAX_REPORTED_CYCLES} circular import cycles; "
+            f"showing the first {len(violations)}."
+        )
+        setattr(
+            exc,
+            "violation_context",
+            [
+                f"Stopped after {MAX_REPORTED_CYCLES} cycles: this graph has too many to "
+                "list. Breaking a few of the modules that appear most often usually "
+                "removes most of them."
+            ],
+        )
+    else:
+        exc = AssertionError(f"Detected {len(violations)} circular import cycle(s).")
     setattr(exc, "violations", violations)
     raise exc
