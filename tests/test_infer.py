@@ -211,9 +211,31 @@ def test_cli_init_infer_shows_enforced_layers_after_a_leak(tmp_path: Path) -> No
     assert result.exit_code == 0
     assert "Layers" in result.output
     assert "api → services → repositories → db" in result.output
-    assert "Enforced" in result.output
-    assert "services → repositories → db" in result.output
+    enforced_line = next(line for line in result.output.splitlines() if "Enforced" in line)
+    assert "services → repositories → db" in enforced_line
 
+
+def test_cli_init_infer_shows_actual_enforced_layers_for_middle_leak(tmp_path: Path) -> None:
+    project = _project(
+        tmp_path,
+        {
+            **LEAKY_APP,
+            "myapp/db/models.py": "from myapp.services import users\n",
+        },
+    )
+
+    inferred = _infer(project)
+    assert inferred.inference.enforced_layers == [
+        "myapp.api",
+        "myapp.repositories",
+        "myapp.db",
+    ]
+
+    result = CliRunner().invoke(cli, ["init", str(project), "--infer"])
+    assert result.exit_code == 0
+    enforced_line = next(line for line in result.output.splitlines() if "Enforced" in line)
+    assert "api → repositories → db" in enforced_line
+    assert "services → repositories → db" not in enforced_line
 
 def test_leak_between_non_chain_packages_gets_its_own_warning(tmp_path: Path) -> None:
     inferred = _infer(
