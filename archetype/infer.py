@@ -124,6 +124,7 @@ class Inference:
     layers: list[str] = field(default_factory=list)
     layers_adjacent: bool = False
     layers_leaky: bool = False
+    enforced_layers: list[str] = field(default_factory=list)
     # Suspected leaks that point upward inside the layer chain.
     layer_leaks: list[ComponentEdge] = field(default_factory=list)
     # Modules that import the scope package itself (`import myapp`), which
@@ -578,6 +579,7 @@ def _build_rules(
             # enforced rule, so every other upward import still fails today.
             reached = {leak.target for leak in inference.layer_leaks}
             enforced = [layer for layer in chain if layer not in reached]
+            inference.enforced_layers = enforced
             reached_names = ", ".join(_short(layer, scope) for layer in chain if layer in reached)
             if len(enforced) >= 2:
                 rules.append(
