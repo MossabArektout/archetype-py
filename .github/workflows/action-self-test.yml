@@ -1,0 +1,29 @@
+name: Composite Action self-test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Uses the composite action defined at the root of this repository
+      # (action.yml) exactly as an external consumer would with
+      # `uses: MossabArektout/archetype-py@<ref>`, proving it actually
+      # works end-to-end rather than only in local shell simulation.
+      - name: Run Archetype via the composite action
+        uses: ./
+        with:
+          checkout: "false"
+          path: "."

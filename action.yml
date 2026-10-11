@@ -1,0 +1,73 @@
+name: "Archetype Architecture Check"
+description: "Enforce architectural rules as code: catch forbidden imports, layer leaks, cycles, and boundary violations in CI."
+author: "Mossab Arektout"
+
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  path:
+    description: "Path to the project to check."
+    required: false
+    default: "."
+  python-version:
+    description: "Python version to run Archetype with."
+    required: false
+    default: "3.11"
+  version:
+    description: "archetype-py version to install, e.g. '0.4.0'. Defaults to the latest release on PyPI."
+    required: false
+    default: ""
+  args:
+    description: "Extra arguments appended to the `archetype check` command, e.g. '--format json'."
+    required: false
+    default: ""
+  github-annotations:
+    description: "Emit inline GitHub PR annotations when the installed Archetype version supports it."
+    required: false
+    default: "true"
+  checkout:
+    description: "Whether this action should check out the repository itself. Set to 'false' if your workflow already has its own actions/checkout step."
+    required: false
+    default: "true"
+  fetch-depth:
+    description: "Git history depth for the checkout step. Use 0 (full history) if you rely on `--changed-from` or `@since`."
+    required: false
+    default: "0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      if: inputs.checkout == 'true'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}
+
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Archetype
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install "archetype-py==${{ inputs.version }}"
+        else
+          pip install archetype-py
+        fi
+
+    - name: Run architecture checks
+      shell: bash
+      run: |
+        set -euo pipefail
+        annotation_flag=""
+        if [ "${{ inputs.github-annotations }}" = "true" ] \
+          && archetype check --help | grep -q -- '--github-annotations'; then
+          annotation_flag="--github-annotations"
+        fi
+        archetype check "${{ inputs.path }}" $annotation_flag ${{ inputs.args }}
