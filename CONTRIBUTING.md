@@ -70,6 +70,12 @@ Open a pull request from your branch to `main`.
 - New features include tests.
 - Commit messages are clear and descriptive.
 
+## AI-assisted contributions
+AI-assisted contributions are welcome. If you use them:
+- Say so in the PR description (for example, "Written with help from an AI assistant").
+- Make sure you understand every change you submit and can explain it in review.
+- Make sure all tests and `archetype check .` pass before opening the PR.
+
 <details>
 <summary>Pull request template preview</summary>
 
