@@ -39,10 +39,20 @@ def _extract_target(violation: Violation) -> str:
     return "<unknown>"
 
 
+def _dependency_path(violation: Violation) -> str | None:
+    # must_not_depend_on() records the complete path from the source module.
+    if violation.message.startswith(f"{violation.module} → "):
+        return violation.message
+    return None
+
+
 def format_violation(violation: Violation) -> str:
     """Format a violation into a concise, actionable message."""
-    target = _extract_target(violation)
     location = _violation_location(violation)
+    dependency_path = _dependency_path(violation)
+    if dependency_path is not None:
+        return f"{location} {dependency_path}" if location is not None else dependency_path
+    target = _extract_target(violation)
     if location is not None:
         return f"{location} {violation.module} -> {target}: {violation.message}"
     return f"{violation.module} -> {target}: {violation.message}"
@@ -163,7 +173,8 @@ def _violation_lines(
         location = _violation_location(violation)
         if location is not None:
             lines.append(f"    - {location}")
-            lines.append(f"        imports {_extract_target(violation)}")
+            detail = _dependency_path(violation) or f"imports {_extract_target(violation)}"
+            lines.append(f"        {detail}")
         else:
             lines.append(f"    - {format_violation(violation)}")
         owners = _violation_owners(violation, codeowners)
@@ -618,9 +629,8 @@ def print_results(
                         location = _violation_location(violation)
                         if location is not None:
                             console.print(f"[yellow]    - {location}[/yellow]")
-                            console.print(
-                                f"[yellow]        imports {_extract_target(violation)}[/yellow]"
-                            )
+                            detail = _dependency_path(violation) or f"imports {_extract_target(violation)}"
+                            console.print(f"[yellow]        {detail}[/yellow]")
                         else:
                             console.print(f"[yellow]    - {format_violation(violation)}[/yellow]")
                         owners = _violation_owners(violation, codeowners)
@@ -641,7 +651,8 @@ def print_results(
                 location = _violation_location(violation)
                 if location is not None:
                     console.print(f"[red]    - {location}[/red]")
-                    console.print(f"[red]        imports {_extract_target(violation)}[/red]")
+                    detail = _dependency_path(violation) or f"imports {_extract_target(violation)}"
+                    console.print(f"[red]        {detail}[/red]")
                 else:
                     console.print(f"[red]    - {format_violation(violation)}[/red]")
                 owners = _violation_owners(violation, codeowners)
