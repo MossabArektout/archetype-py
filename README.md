@@ -141,6 +141,8 @@ Summary: 2 passed, 1 failed, 1 warned, 0 skipped, 4 total rules.
 
 If a rule's pattern matches no modules (usually a typo, or a rename the rule missed), it is reported as a warning with suggestions instead of passing silently.
 
+For copy-paste rules covering the most common checks (API must not import the database, services must not import the API, no import cycles, and protected internal modules), see [Common Rule Recipes](docs/recipes.md).
+
 For a complete rule file for a layered FastAPI project, see [`examples/fastapi/`](./examples/fastapi).
 
 ## Adopting It in an Existing Codebase
@@ -184,6 +186,7 @@ GitLab CI, Azure Pipelines, the built-in hook installer, and shell completion ar
 ## Documentation
 
 - **[Writing Rules](docs/rules.md)**: every check, module patterns, decorators, inference, severity escalation, and shared rule packs
+- **[Common Rule Recipes](docs/recipes.md)**: copy-paste rules for layer boundaries, import cycles, and protected internal modules
 - **[Using the CLI](docs/usage.md)**: commands, configuration (`archetype.toml`), diagnostics, baselines, changed-files mode, trends, and troubleshooting
 - **[CI and Integrations](docs/integrations.md)**: GitHub Actions, GitLab CI, Azure Pipelines, pre-commit, pytest, CODEOWNERS, and shell completion
 - **[Report Formats](docs/reports.md)**: the JSON report contract, SARIF, and import graph export

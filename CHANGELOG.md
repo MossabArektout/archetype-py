@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Documentation
+- Added `docs/recipes.md` with copy-paste rules for forbidden layer imports,
+  import cycles, and protected internal modules, linked from the README. (#75)
+
 ## 0.6.0 - 2026-10-23
 
 ### Added
