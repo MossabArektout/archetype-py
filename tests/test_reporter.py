@@ -484,4 +484,63 @@ def test_format_violation_names_the_imported_module_for_cycle_chains() -> None:
         message="myapp.a imports myapp.b imports myapp.a",
     )
 
-    assert "imports myapp.b" in format_violation(violation)
+    assert format_violation(violation) == (
+        "myapp/a.py:3 myapp.a -> myapp.b: myapp.a imports myapp.b imports myapp.a"
+    )
+
+
+@pytest.mark.parametrize("renderer", ["format", "print"])
+@pytest.mark.parametrize("warned", [False, True])
+@pytest.mark.parametrize("line", [0, 3])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "myapp.a → myapp.b",
+        "myapp.a → myapp.b → myapp.c",
+        "myapp.a → myapp.b → myapp.c → myapp.d",
+    ],
+)
+def test_reporter_shows_full_dependency_path(
+    renderer: str, warned: bool, line: int, path: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    violation = Violation(module="myapp.a", file=Path("myapp/a.py"), line=line, message=path)
+    result = RuleResult(
+        name="no-transitive-dependency",
+        passed=False,
+        violations=[violation],
+        warned=warned,
+        is_warning=warned,
+    )
+
+    output = _render_output(renderer, [result], quiet=True, capsys=capsys)
+
+    assert path in output
+    assert "<unknown>" not in output
+    assert "imports " not in output
+    assert ("⚠" if warned else "✗") in output
+    if line:
+        assert "myapp/a.py:3" in output
+    assert format_violation(violation) == (f"myapp/a.py:3 {path}" if line else path)
+
+
+def test_dependency_path_keeps_structured_report_contracts() -> None:
+    path = "myapp.a → myapp.b → myapp.c"
+    violation = Violation(module="myapp.a", file=Path("myapp/a.py"), line=3, message=path)
+    results = [RuleResult(name="no-transitive-dependency", passed=False, violations=[violation])]
+
+    payload = format_results_json(results)
+    assert payload["schema_version"] == JSON_SCHEMA_VERSION
+    assert payload["rules"][0]["violations"] == [
+        {
+            "module": "myapp.a",
+            "file": "myapp/a.py",
+            "line": 3,
+            "target": "<unknown>",
+            "message": path,
+            "owners": [],
+        }
+    ]
+    sarif_result = format_results_sarif(results, project_root=Path.cwd())["runs"][0]["results"][0]
+    assert sarif_result["properties"] == {"module": "myapp.a", "target": "<unknown>"}
+    assert sarif_result["message"] == {"text": f"no-transitive-dependency: {path}"}
+    assert format_github_annotations(results, project_root=Path.cwd())[0].endswith(path)

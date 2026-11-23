@@ -7,6 +7,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from archetype.check import cli
@@ -20,6 +21,58 @@ def _make_project_copy(tmp_path: Path) -> Path:
     project_path = tmp_path / "project"
     shutil.copytree(_fixture_root() / "simple_project", project_path / "simple_project")
     return project_path
+
+
+@pytest.mark.parametrize("modules", [("a", "b"), ("a", "b", "c", "d")])
+@pytest.mark.parametrize("warned", [False, True])
+def test_cli_shows_full_dependency_path(
+    tmp_path: Path, modules: tuple[str, ...], warned: bool
+) -> None:
+    package = tmp_path / "myapp"
+    package.mkdir()
+    for index, module in enumerate(modules):
+        source = f"import myapp.{modules[index + 1]}\n" if index + 1 < len(modules) else ""
+        (package / f"{module}.py").write_text(source, encoding="utf-8")
+    (tmp_path / "architecture.py").write_text(
+        "from archetype import imports, rule, warn\n"
+        "@rule('no-transitive-dependency')\n"
+        + ("@warn\n" if warned else "")
+        + "def check_dependencies():\n"
+        + f"    imports('myapp.a').must_not_depend_on('myapp.{modules[-1]}')\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "CODEOWNERS").write_text("myapp/a.py @api-team\n", encoding="utf-8")
+    runner = CliRunner()
+    args = ["check", str(tmp_path), "--no-cache", "--quiet"]
+    path = " → ".join(f"myapp.{module}" for module in modules)
+    expected_exit = 0 if warned else 1
+
+    text_result = runner.invoke(cli, args)
+
+    assert text_result.exit_code == expected_exit
+    assert path in text_result.output
+    assert "myapp/a.py:1" in text_result.output
+    assert "owner: @api-team" in text_result.output
+    assert "<unknown>" not in text_result.output
+    assert ("0 failed, 1 warned" if warned else "1 failed, 0 warned") in text_result.output
+
+    json_result = runner.invoke(cli, [*args, "--format", "json"])
+    assert json_result.exit_code == expected_exit
+    violation = json.loads(json_result.output)["rules"][0]["violations"][0]
+    assert violation == {
+        "module": "myapp.a",
+        "file": (package / "a.py").as_posix(),
+        "line": 1,
+        "target": "<unknown>",
+        "message": path,
+        "owners": ["@api-team"],
+    }
+
+    sarif_result = runner.invoke(cli, [*args, "--format", "sarif"])
+    assert sarif_result.exit_code == expected_exit
+    violation = json.loads(sarif_result.output)["runs"][0]["results"][0]
+    assert violation["message"] == {"text": f"no-transitive-dependency: {path}"}
+    assert violation["properties"]["target"] == "<unknown>"
 
 
 def _write_quiet_mode_fixture(project_path: Path) -> None:
