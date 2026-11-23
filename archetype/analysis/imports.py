@@ -12,6 +12,53 @@ import networkx as nx
 from archetype.analysis.ast_utils import read_source
 from archetype.analysis.path_filters import is_path_excluded, normalize_exclude_patterns
 
+
+class SourceReadError(ValueError):
+    """Raised when a Python source file cannot be read or parsed."""
+
+
+def _describe_source_failure(exc: Exception) -> str:
+    if isinstance(exc, SyntaxError):
+        if exc.lineno:
+            return f"{exc.msg} (line {exc.lineno})"
+        return str(exc.msg)
+    if isinstance(exc, UnicodeDecodeError):
+        return f"not valid UTF-8 ({exc.reason})"
+    return str(exc)
+
+
+def _display_path(file_path: Path, project_root: Path | None) -> str:
+    """Render a source path relative to the project root when possible."""
+    if project_root is None:
+        return str(file_path)
+    try:
+        return file_path.resolve().relative_to(project_root.resolve()).as_posix()
+    except ValueError:
+        return file_path.as_posix()
+
+
+def read_source(file_path: Path, project_root: Path | None = None) -> str:
+    """Read a Python source file, raising SourceReadError on failure."""
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise SourceReadError(
+            f"failed to read {_display_path(file_path, project_root)}: "
+            f"{_describe_source_failure(exc)}"
+        ) from exc
+
+
+def parse_source(source: str, file_path: Path, project_root: Path | None = None) -> ast.AST:
+    """Parse Python source, raising SourceReadError on syntax errors."""
+    try:
+        return ast.parse(source, filename=str(file_path))
+    except (SyntaxError, ValueError) as exc:
+        raise SourceReadError(
+            f"failed to parse {_display_path(file_path, project_root)}: "
+            f"{_describe_source_failure(exc)}"
+        ) from exc
+
+
 _IGNORED_DIRS = {
     "__pycache__",
     ".git",
