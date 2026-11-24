@@ -322,3 +322,51 @@ def test_ensure_gitignore_entry_preserves_content_without_duplicate_cache_entry(
     assert gitignore.read_text(encoding="utf-8") == (
         "# local files\nnode_modules/\n.archetype_cache\n"
     )
+
+
+def _write_mixed_import_project(root: Path) -> None:
+    pkg = root / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("import database\nVALUE = 1\n", encoding="utf-8")
+    (pkg / "child.py").write_text("", encoding="utf-8")
+    (root / "database.py").write_text("", encoding="utf-8")
+
+
+def test_graph_retains_base_package_edge_for_mixed_from_import(tmp_path: Path) -> None:
+    _write_mixed_import_project(tmp_path)
+    (tmp_path / "consumer.py").write_text("from pkg import child, VALUE\n", encoding="utf-8")
+
+    graph = build_import_graph(tmp_path)
+
+    assert graph.has_edge("consumer", "pkg.child")
+    assert graph.has_edge("consumer", "pkg")
+    assert graph.has_edge("pkg", "database")
+
+
+def test_graph_keeps_submodule_only_from_import_scoped_to_submodule(tmp_path: Path) -> None:
+    _write_mixed_import_project(tmp_path)
+    (tmp_path / "consumer.py").write_text("from pkg import child\n", encoding="utf-8")
+
+    graph = build_import_graph(tmp_path)
+
+    assert graph.has_edge("consumer", "pkg.child")
+    assert not graph.has_edge("consumer", "pkg")
+
+
+def test_graph_retains_base_package_edge_for_name_only_from_import(tmp_path: Path) -> None:
+    _write_mixed_import_project(tmp_path)
+    (tmp_path / "consumer.py").write_text("from pkg import VALUE\n", encoding="utf-8")
+
+    graph = build_import_graph(tmp_path)
+
+    assert graph.has_edge("consumer", "pkg")
+    assert not graph.has_edge("consumer", "pkg.child")
+
+
+def test_graph_retains_base_package_edge_for_star_from_import(tmp_path: Path) -> None:
+    _write_mixed_import_project(tmp_path)
+    (tmp_path / "consumer.py").write_text("from pkg import *\n", encoding="utf-8")
+
+    graph = build_import_graph(tmp_path)
+
+    assert graph.has_edge("consumer", "pkg")

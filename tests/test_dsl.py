@@ -250,3 +250,17 @@ def test_fan_in_and_fan_out_reject_negative_limits() -> None:
 
     with pytest.raises(ValueError, match="fan_out_at_most"):
         imports("simple_project").fan_out_at_most(-1)
+
+
+def test_must_not_depend_on_catches_mixed_from_import(tmp_path: Path) -> None:
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("import database\nVALUE = 1\n", encoding="utf-8")
+    (pkg / "child.py").write_text("", encoding="utf-8")
+    (tmp_path / "database.py").write_text("", encoding="utf-8")
+    (tmp_path / "consumer.py").write_text("from pkg import child, VALUE\n", encoding="utf-8")
+
+    load_project(tmp_path)
+
+    with pytest.raises(AssertionError):
+        imports("consumer").must_not_depend_on("database")

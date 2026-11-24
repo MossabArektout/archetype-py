@@ -253,23 +253,28 @@ def build_import_graph(
                 # Resolve imported names as potential submodules first.
                 # Example: `from simple_project import db` -> `simple_project.db`
                 # Example: `from . import utils` -> `<current_pkg>.utils`
-                resolved_submodule = False
+                # A name that does not resolve to a local submodule is loaded
+                # from the base module itself, so the base module dependency
+                # must be kept even when sibling names resolve to submodules.
+                needs_base_module = False
                 for alias in node.names:
                     if alias.name == "*":
+                        needs_base_module = True
                         continue
                     candidate = f"{base_module}.{alias.name}" if base_module else alias.name
                     if candidate and is_local_module(candidate):
-                        resolved_submodule = True
                         add_import_edge(
                             current_module,
                             candidate,
                             line=getattr(node, "lineno", 0),
                             file_path=file_path,
                         )
+                    else:
+                        needs_base_module = True
 
-                # Fall back to base module dependency when no concrete local
-                # submodule candidates were found (or for star imports).
-                if not resolved_submodule or any(alias.name == "*" for alias in node.names):
+                # Add the base module dependency for names that are not local
+                # submodules (or for star imports).
+                if needs_base_module:
                     add_import_edge(
                         current_module,
                         base_module,
